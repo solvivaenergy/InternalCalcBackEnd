@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
+import { createHash } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 
 const INCLUDED_DC_CABLE_METERS = 30;
 const INCLUDED_AC_CABLE_METERS = 10;
@@ -43,8 +43,16 @@ export async function buildQuote(input) {
     panelCount,
   };
 
-  const packageData = buildPackageLineItems(fullState, runtime.adminParams, runtime);
-  const paymentTerms = computePaymentTerms(fullState, runtime.adminParams, packageData);
+  const packageData = buildPackageLineItems(
+    fullState,
+    runtime.adminParams,
+    runtime,
+  );
+  const paymentTerms = computePaymentTerms(
+    fullState,
+    runtime.adminParams,
+    packageData,
+  );
 
   const quotePayload = {
     generatedAt: new Date().toISOString(),
@@ -54,9 +62,9 @@ export async function buildQuote(input) {
     paymentTerms,
   };
 
-  const quoteSignature = createHash('sha256')
+  const quoteSignature = createHash("sha256")
     .update(JSON.stringify({ quotePayload, adminParams: runtime.adminParams }))
-    .digest('hex');
+    .digest("hex");
 
   return {
     quoteSignature,
@@ -65,45 +73,65 @@ export async function buildQuote(input) {
 }
 
 function validateInput(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return 'Input must be a JSON object.';
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return "Input must be a JSON object.";
   }
-  if (!Number.isFinite(Number(input.monthlyBill)) || Number(input.monthlyBill) < 0) {
-    return 'monthlyBill must be a non-negative number.';
+  if (
+    !Number.isFinite(Number(input.monthlyBill)) ||
+    Number(input.monthlyBill) < 0
+  ) {
+    return "monthlyBill must be a non-negative number.";
   }
-  if (!Number.isFinite(Number(input.utilityRate)) || Number(input.utilityRate) <= 0) {
-    return 'utilityRate must be a positive number.';
+  if (
+    !Number.isFinite(Number(input.utilityRate)) ||
+    Number(input.utilityRate) <= 0
+  ) {
+    return "utilityRate must be a positive number.";
   }
-  if (!Number.isFinite(Number(input.desiredSavingsPct)) || Number(input.desiredSavingsPct) < 0) {
-    return 'desiredSavingsPct must be a non-negative number.';
+  if (
+    !Number.isFinite(Number(input.desiredSavingsPct)) ||
+    Number(input.desiredSavingsPct) < 0
+  ) {
+    return "desiredSavingsPct must be a non-negative number.";
   }
-  if (input.phase !== 'single' && input.phase !== 'three') {
+  if (input.phase !== "single" && input.phase !== "three") {
     return 'phase must be either "single" or "three".';
   }
   if (!Number.isInteger(Number(input.tenor)) || Number(input.tenor) < 1) {
-    return 'tenor must be a positive integer.';
+    return "tenor must be a positive integer.";
   }
-  if (!Number.isFinite(Number(input.downPaymentPct)) || Number(input.downPaymentPct) < 0) {
-    return 'downPaymentPct must be a non-negative number.';
+  if (
+    !Number.isFinite(Number(input.downPaymentPct)) ||
+    Number(input.downPaymentPct) < 0
+  ) {
+    return "downPaymentPct must be a non-negative number.";
   }
   if (input.deviceRows != null && !Array.isArray(input.deviceRows)) {
-    return 'deviceRows must be an array when provided.';
+    return "deviceRows must be an array when provided.";
   }
   return null;
 }
 
 function sanitizeState(input, adminParams, runtime) {
-  const phase = input.phase === 'three' ? 'three' : 'single';
+  const phase = input.phase === "three" ? "three" : "single";
   const panelCount = Number.isFinite(Number(input.panelCount))
     ? Math.max(0, Math.round(Number(input.panelCount)))
     : null;
 
-  const selectedInverters = resolveSelectedInverters(phase, input.selectedInverters, runtime);
+  const selectedInverters = resolveSelectedInverters(
+    phase,
+    input.selectedInverters,
+    runtime,
+  );
 
-  const promoCode = String(input.promoCode || '').trim().toUpperCase();
-  const normalizedPromoCode = adminParams.promoCodes.some((p) => p.code === promoCode)
+  const promoCode = String(input.promoCode || "")
+    .trim()
+    .toUpperCase();
+  const normalizedPromoCode = adminParams.promoCodes.some(
+    (p) => p.code === promoCode,
+  )
     ? promoCode
-    : '';
+    : "";
 
   return {
     phase,
@@ -112,23 +140,37 @@ function sanitizeState(input, adminParams, runtime) {
     desiredSavingsPct: Number(input.desiredSavingsPct),
     deviceRows: Array.isArray(input.deviceRows) ? input.deviceRows : [],
     panelCount,
-    dcCableMeters: Number.isFinite(Number(input.dcCableMeters)) ? Number(input.dcCableMeters) : INCLUDED_DC_CABLE_METERS,
-    acCableMeters: Number.isFinite(Number(input.acCableMeters)) ? Number(input.acCableMeters) : INCLUDED_AC_CABLE_METERS,
+    dcCableMeters: Number.isFinite(Number(input.dcCableMeters))
+      ? Number(input.dcCableMeters)
+      : INCLUDED_DC_CABLE_METERS,
+    acCableMeters: Number.isFinite(Number(input.acCableMeters))
+      ? Number(input.acCableMeters)
+      : INCLUDED_AC_CABLE_METERS,
     rsdEnabled: !!input.rsdEnabled,
-    rsdStandalonePanelCount: Number.isFinite(Number(input.rsdStandalonePanelCount))
+    rsdStandalonePanelCount: Number.isFinite(
+      Number(input.rsdStandalonePanelCount),
+    )
       ? Math.max(0, Math.round(Number(input.rsdStandalonePanelCount)))
       : 0,
     selectedInverters,
-    batteryKwh: Number.isFinite(Number(input.batteryKwh)) ? Math.max(0, Number(input.batteryKwh)) : 0,
-    batteryPackageId: input.batteryPackageId ? String(input.batteryPackageId) : undefined,
-    roofMaterial: ['metal', 'asphalt', 'concrete'].includes(input.roofMaterial)
+    batteryKwh: Number.isFinite(Number(input.batteryKwh))
+      ? Math.max(0, Number(input.batteryKwh))
+      : 0,
+    batteryPackageId: input.batteryPackageId
+      ? String(input.batteryPackageId)
+      : undefined,
+    roofMaterial: ["metal", "asphalt", "concrete"].includes(input.roofMaterial)
       ? input.roofMaterial
-      : 'metal',
-    location: ['luzon', 'cebu', 'siargao'].includes(input.location)
+      : "metal",
+    location: ["luzon", "cebu", "siargao"].includes(input.location)
       ? input.location
-      : 'luzon',
-    locationKm: Number.isFinite(Number(input.locationKm)) ? Math.max(0, Number(input.locationKm)) : 0,
-    miscMaterials: Array.isArray(input.miscMaterials) ? input.miscMaterials : [],
+      : "luzon",
+    locationKm: Number.isFinite(Number(input.locationKm))
+      ? Math.max(0, Number(input.locationKm))
+      : 0,
+    miscMaterials: Array.isArray(input.miscMaterials)
+      ? input.miscMaterials
+      : [],
     tenor: Math.round(Number(input.tenor)),
     downPaymentPct: Number(input.downPaymentPct),
     promoCode: normalizedPromoCode,
@@ -136,14 +178,17 @@ function sanitizeState(input, adminParams, runtime) {
 }
 
 function resolveSelectedInverters(phase, raw, runtime) {
-  const inventory = phase === 'three' ? runtime.invertersThreePhase : runtime.invertersSinglePhase;
+  const inventory =
+    phase === "three"
+      ? runtime.invertersThreePhase
+      : runtime.invertersSinglePhase;
   const byRatedKw = new Map(inventory.map((inv) => [Number(inv.ratedKw), inv]));
   const rows = Array.isArray(raw) ? raw.slice(0, 3) : [];
   while (rows.length < 3) rows.push(null);
 
   return rows.map((entry) => {
     if (entry == null) return null;
-    const ratedKw = typeof entry === 'number' ? entry : Number(entry?.ratedKw);
+    const ratedKw = typeof entry === "number" ? entry : Number(entry?.ratedKw);
     if (!Number.isFinite(ratedKw)) return null;
     return byRatedKw.get(ratedKw) || null;
   });
@@ -154,7 +199,9 @@ async function loadRuntimeDataFromSupabase() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
-    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables.');
+    throw new Error(
+      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables.",
+    );
   }
 
   const supabase = createClient(supabaseUrl, serviceKey, {
@@ -162,17 +209,17 @@ async function loadRuntimeDataFromSupabase() {
   });
 
   const singletonTables = [
-    'interest_rates',
-    'mounting_support',
-    'variable_charges',
-    'roof_material_rates',
-    'location_delivery_charges',
-    'rsd_pricing',
-    'standalone_retrofit_charges',
-    'fixed_overhead',
-    'schedule_constants',
-    'quote_settings',
-    'maintenance_mode',
+    "interest_rates",
+    "mounting_support",
+    "variable_charges",
+    "roof_material_rates",
+    "location_delivery_charges",
+    "rsd_pricing",
+    "standalone_retrofit_charges",
+    "fixed_overhead",
+    "schedule_constants",
+    "quote_settings",
+    "maintenance_mode",
   ];
 
   const [
@@ -196,45 +243,81 @@ async function loadRuntimeDataFromSupabase() {
     deviceSettings,
   ] = await Promise.all([
     ...singletonTables.map((t) => fetchSingleton(supabase, t)),
-    fetchMany(supabase, 'cabling_tiers', 'phase,min_panels,dc_cable_pct,ac_cable_pct,conduits_pct,panel_board_pct', { orderBy: 'min_panels' }),
-    fetchMany(supabase, 'battery_packages', 'id,label,battery_unit_kwh,battery_unit_price,battery_rack_capacity,battery_rack_price,ats_price,critical_loads_materials,labor_with_solar_install,standalone_labor,sort_order', { orderBy: 'sort_order' }),
-    fetchMany(supabase, 'promo_codes', 'code,label,discount', { orderBy: 'code' }),
-    fetchMany(supabase, 'devices', 'name,peak_kw,duty_factor', { orderBy: 'name' }),
-    fetchMany(supabase, 'panel_settings', 'phase,panel_watts,panel_direct_price,max_dc_ac_ratio'),
-    fetchMany(supabase, 'inverters', 'phase,rated_kw,direct_price', { orderBy: 'rated_kw' }),
-    fetchSingletonOptional(supabase, 'device_settings'),
+    fetchMany(
+      supabase,
+      "cabling_tiers",
+      "phase,min_panels,dc_cable_pct,ac_cable_pct,conduits_pct,panel_board_pct",
+      { orderBy: "min_panels" },
+    ),
+    fetchMany(
+      supabase,
+      "battery_packages",
+      "id,label,battery_unit_kwh,battery_unit_price,battery_rack_capacity,battery_rack_price,ats_price,critical_loads_materials,labor_with_solar_install,standalone_labor,sort_order",
+      { orderBy: "sort_order" },
+    ),
+    fetchMany(supabase, "promo_codes", "code,label,discount", {
+      orderBy: "code",
+    }),
+    fetchMany(supabase, "devices", "name,peak_kw,duty_factor", {
+      orderBy: "name",
+    }),
+    fetchMany(
+      supabase,
+      "panel_settings",
+      "phase,panel_watts,panel_direct_price,max_dc_ac_ratio",
+    ),
+    fetchMany(supabase, "inverters", "phase,rated_kw,direct_price", {
+      orderBy: "rated_kw",
+    }),
+    fetchSingletonOptional(supabase, "device_settings"),
   ]);
 
-  if (!devices.length) throw new Error('No device rows found in devices table.');
-  if (!panelSettings.length) throw new Error('No panel settings found in panel_settings table.');
-  if (!inverters.length) throw new Error('No inverter rows found in inverters table.');
-  if (!batteryPackages.length) throw new Error('No battery package rows found in battery_packages table.');
+  if (!devices.length)
+    throw new Error("No device rows found in devices table.");
+  if (!panelSettings.length)
+    throw new Error("No panel settings found in panel_settings table.");
+  if (!inverters.length)
+    throw new Error("No inverter rows found in inverters table.");
+  if (!batteryPackages.length)
+    throw new Error("No battery package rows found in battery_packages table.");
 
   const singleTiers = cablingRows
-    .filter((r) => r.phase === 'single')
+    .filter((r) => r.phase === "single")
     .map(mapCablingTier);
   const threeTiers = cablingRows
-    .filter((r) => r.phase === 'three')
+    .filter((r) => r.phase === "three")
     .map(mapCablingTier);
 
-  const panelSingle = panelSettings.find((p) => p.phase === 'single');
-  const panelThree = panelSettings.find((p) => p.phase === 'three');
+  const panelSingle = panelSettings.find((p) => p.phase === "single");
+  const panelThree = panelSettings.find((p) => p.phase === "three");
   if (!panelSingle || !panelThree) {
-    throw new Error('panel_settings must include both single and three phase rows.');
+    throw new Error(
+      "panel_settings must include both single and three phase rows.",
+    );
   }
 
   const invertersSinglePhase = inverters
-    .filter((i) => i.phase === 'single')
-    .map((i) => ({ ratedKw: Number(i.rated_kw), directPrice: Number(i.direct_price) }));
+    .filter((i) => i.phase === "single")
+    .map((i) => ({
+      ratedKw: Number(i.rated_kw),
+      directPrice: Number(i.direct_price),
+    }));
   const invertersThreePhase = inverters
-    .filter((i) => i.phase === 'three')
-    .map((i) => ({ ratedKw: Number(i.rated_kw), directPrice: Number(i.direct_price) }));
+    .filter((i) => i.phase === "three")
+    .map((i) => ({
+      ratedKw: Number(i.rated_kw),
+      directPrice: Number(i.direct_price),
+    }));
   if (!invertersSinglePhase.length || !invertersThreePhase.length) {
-    throw new Error('inverters table must include both single and three phase rows.');
+    throw new Error(
+      "inverters table must include both single and three phase rows.",
+    );
   }
 
   const runtime = {
-    dayStartHour: Number(deviceSettings?.day_start_hour ?? FALLBACK_DAY_START_HOUR),
+    dayStartHour: Number(
+      deviceSettings?.day_start_hour ?? FALLBACK_DAY_START_HOUR,
+    ),
     devices: devices.map((d) => ({
       name: d.name,
       peakKw: Number(d.peak_kw),
@@ -278,10 +361,14 @@ async function loadRuntimeDataFromSupabase() {
     luzonOver30PerKm: locationDelivery.luzon_over30_per_km,
     rsdVariablePerPanel: rsdPricing.rsd_variable_per_panel,
     rsdFixedTransmitter: rsdPricing.rsd_fixed_transmitter,
-    rsdStandaloneLaborPerPanel: standaloneCharges.rsd_standalone_labor_per_panel,
-    rsdStandaloneLaborMobilization: standaloneCharges.rsd_standalone_labor_mobilization,
-    inverterStandaloneLaborPerUnit: standaloneCharges.inverter_standalone_labor_per_unit,
-    inverterStandaloneMobilization: standaloneCharges.inverter_standalone_mobilization,
+    rsdStandaloneLaborPerPanel:
+      standaloneCharges.rsd_standalone_labor_per_panel,
+    rsdStandaloneLaborMobilization:
+      standaloneCharges.rsd_standalone_labor_mobilization,
+    inverterStandaloneLaborPerUnit:
+      standaloneCharges.inverter_standalone_labor_per_unit,
+    inverterStandaloneMobilization:
+      standaloneCharges.inverter_standalone_mobilization,
     fixedOverheadDeliveryLogistics: fixedOverhead.delivery_logistics,
     fixedOverheadWarehouse: fixedOverhead.warehouse,
     fixedOverheadCustoms: fixedOverhead.customs,
@@ -306,10 +393,24 @@ async function loadRuntimeDataFromSupabase() {
     lcoeNpvDiscountRate: scheduleConstants.lcoe_npv_discount_rate,
     maintenanceInflationRate: scheduleConstants.maintenance_inflation_rate,
     netMeteringEfficiency: scheduleConstants.net_metering_efficiency,
-    preventiveMaintenancePerPanel: scheduleConstants.preventive_maintenance_per_panel,
-    preventiveMaintenancePerVisit: scheduleConstants.preventive_maintenance_per_visit,
-    minDaysToFirstPostInstallPayment: scheduleConstants.min_days_to_first_post_install_payment,
-    promoCodes: promoCodes.map((p) => ({ code: p.code, label: p.label, discount: p.discount })),
+    preventiveMaintenancePerPanel:
+      scheduleConstants.preventive_maintenance_per_panel,
+    preventiveMaintenancePerVisit:
+      scheduleConstants.preventive_maintenance_per_visit,
+    minDaysToFirstPostInstallPayment:
+      scheduleConstants.min_days_to_first_post_install_payment,
+    promoCodes: promoCodes.map((p) => ({
+      code: p.code,
+      label: p.label,
+      discount: p.discount,
+    })),
+    minSystemKwp: Number(quoteSettings.min_system_kwp || 0),
+    minDpTiers: Array.isArray(quoteSettings.min_dp_tiers)
+      ? quoteSettings.min_dp_tiers
+      : [{ fromNetPrice: 0, minDpPct: 0 }],
+    maxTenorMonths: Number(quoteSettings.max_tenor_months || 60),
+    defaultUtilityRate: Number(quoteSettings.default_utility_rate || 15),
+    defaultMonthlyBill: Number(quoteSettings.default_monthly_bill || 15000),
     quoteValidityDays: quoteSettings.quote_validity_days,
     gateAuthEnabled: maintenanceMode.gate_auth_enabled,
   };
@@ -320,7 +421,7 @@ async function loadRuntimeDataFromSupabase() {
 async function fetchSingletonOptional(supabase, table) {
   const { data, error } = await supabase
     .from(table)
-    .select('*')
+    .select("*")
     .limit(1)
     .maybeSingle();
   if (error) {
@@ -342,10 +443,11 @@ function mapCablingTier(row) {
 async function fetchSingleton(supabase, table) {
   const { data, error } = await supabase
     .from(table)
-    .select('*')
+    .select("*")
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(`Supabase query failed for ${table}: ${error.message}`);
+  if (error)
+    throw new Error(`Supabase query failed for ${table}: ${error.message}`);
   if (!data) throw new Error(`Missing required row in table ${table}.`);
   return data;
 }
@@ -356,7 +458,8 @@ async function fetchMany(supabase, table, columns, options = {}) {
     query = query.order(options.orderBy, { ascending: true });
   }
   const { data, error } = await query;
-  if (error) throw new Error(`Supabase query failed for ${table}: ${error.message}`);
+  if (error)
+    throw new Error(`Supabase query failed for ${table}: ${error.message}`);
   return Array.isArray(data) ? data : [];
 }
 
@@ -370,17 +473,25 @@ function PMT(rate, nper, pv, fv = 0, type = 0) {
 function PV(rate, nper, pmt, fv = 0, type = 0) {
   if (rate === 0) return -(pmt * nper + fv);
   const pvif = Math.pow(1 + rate, nper);
-  return -(pmt * (1 + rate * type) * (pvif - 1) / rate + fv) / pvif;
+  return -((pmt * (1 + rate * type) * (pvif - 1)) / rate + fv) / pvif;
 }
 
 function effectiveRtoRate(panelCount, adminParams) {
-  const premium = panelCount < adminParams.smallPackagePanelThreshold
-    ? adminParams.smallPackageRiskPremiumBps / 10000
-    : 0;
+  const premium =
+    panelCount < adminParams.smallPackagePanelThreshold
+      ? adminParams.smallPackageRiskPremiumBps / 10000
+      : 0;
   return adminParams.baseRtoInterestRate + premium;
 }
 
-function deviceMonthlyKwh(device, count, onTime, offTime, daysPerWeek, dayStartHour) {
+function deviceMonthlyKwh(
+  device,
+  count,
+  onTime,
+  offTime,
+  daysPerWeek,
+  dayStartHour,
+) {
   if (onTime == null || offTime == null || count == null || count <= 0) {
     return { dayKwh: 0, nightKwh: 0 };
   }
@@ -391,12 +502,24 @@ function deviceMonthlyKwh(device, count, onTime, offTime, daysPerWeek, dayStartH
   else dur = offTime + 1 - onTime;
 
   const shift = dayStartHour / 24;
-  const onShifted = ((onTime - shift) % 1 + 1) % 1;
-  const dayPiece1 = Math.max(0, Math.min(onShifted + dur, 0.5) - Math.max(onShifted, 0));
-  const dayPiece2 = Math.max(0, Math.min(onShifted + dur, 1.5) - Math.max(onShifted, 1));
+  const onShifted = (((onTime - shift) % 1) + 1) % 1;
+  const dayPiece1 = Math.max(
+    0,
+    Math.min(onShifted + dur, 0.5) - Math.max(onShifted, 0),
+  );
+  const dayPiece2 = Math.max(
+    0,
+    Math.min(onShifted + dur, 1.5) - Math.max(onShifted, 1),
+  );
   const hoursDay = (dayPiece1 + dayPiece2) * 24;
-  const nightPiece1 = Math.max(0, Math.min(onShifted + dur, 1.0) - Math.max(onShifted, 0.5));
-  const nightPiece2 = Math.max(0, Math.min(onShifted + dur, 2.0) - Math.max(onShifted, 1.5));
+  const nightPiece1 = Math.max(
+    0,
+    Math.min(onShifted + dur, 1.0) - Math.max(onShifted, 0.5),
+  );
+  const nightPiece2 = Math.max(
+    0,
+    Math.min(onShifted + dur, 2.0) - Math.max(onShifted, 1.5),
+  );
   const hoursNight = (nightPiece1 + nightPiece2) * 24;
 
   const monthlyMultiplier = (daysPerWeek / 7) * (365 / 12);
@@ -430,20 +553,30 @@ function totalDeviceKwh(deviceRows, runtime) {
 }
 
 function computeRecommendedPanels(inputs, adminParams, runtime) {
-  const { monthlyBill, utilityRate, deviceRows, desiredSavingsPct, phase } = inputs;
+  const { monthlyBill, utilityRate, deviceRows, desiredSavingsPct, phase } =
+    inputs;
   const q25 = monthlyBill / utilityRate;
-  const { totalDeviceDayKwh, totalDeviceNightKwh } = totalDeviceKwh(deviceRows, runtime);
+  const { totalDeviceDayKwh, totalDeviceNightKwh } = totalDeviceKwh(
+    deviceRows,
+    runtime,
+  );
   const q26 = totalDeviceDayKwh + totalDeviceNightKwh;
   const q27 = q25 - q26;
   const q28 = q27 / 2 + totalDeviceDayKwh;
   const q29 = q27 / 2 + totalDeviceNightKwh;
-  const q31 = q29 / adminParams.batteryEfficiency / adminParams.batteryDepthOfDischarge;
-  const q32 = (q28 + q31) * 12 / 365;
-  const panelWatts = phase === 'three'
-    ? runtime.panelSettings.threePhase.panelWatts
-    : runtime.panelSettings.singlePhase.panelWatts;
-  const q34 = desiredSavingsPct * q32 * 1000 / panelWatts / adminParams.kWhPerKwpPerDay;
-  const w7 = Math.ceil(q34);
+  const q31 =
+    q29 / adminParams.batteryEfficiency / adminParams.batteryDepthOfDischarge;
+  const q32 = ((q28 + q31) * 12) / 365;
+  const panelWatts =
+    phase === "three"
+      ? runtime.panelSettings.threePhase.panelWatts
+      : runtime.panelSettings.singlePhase.panelWatts;
+  const q34 =
+    (desiredSavingsPct * q32 * 1000) / panelWatts / adminParams.kWhPerKwpPerDay;
+  const minPanelsFloor = Math.ceil(
+    ((adminParams.minSystemKwp || 0) * 1000) / panelWatts,
+  );
+  const w7 = Math.max(Math.ceil(q34), minPanelsFloor);
 
   return {
     estMonthlyKwh: q25,
@@ -462,10 +595,41 @@ function computeRecommendedPanels(inputs, adminParams, runtime) {
   };
 }
 
+function resolveMinDpPct(minDpTiers, netPrice) {
+  if (!Array.isArray(minDpTiers) || minDpTiers.length === 0) return 0;
+  const sorted = [...minDpTiers]
+    .filter(
+      (t) =>
+        t &&
+        Number.isFinite(Number(t.fromNetPrice)) &&
+        Number.isFinite(Number(t.minDpPct)),
+    )
+    .map((t) => ({
+      fromNetPrice: Number(t.fromNetPrice),
+      minDpPct: Number(t.minDpPct),
+    }))
+    .sort((a, b) => a.fromNetPrice - b.fromNetPrice);
+  if (sorted.length === 0) return 0;
+
+  const n = Number(netPrice);
+  const key = Number.isFinite(n) ? n : 0;
+  let floor = sorted[0].minDpPct || 0;
+  for (const row of sorted) {
+    if (key >= row.fromNetPrice) floor = row.minDpPct;
+    else break;
+  }
+  return Math.max(0, Math.min(0.5, floor));
+}
+
 function cablingTotalPct(panelCount, adminParams, phase) {
-  const singleTiers = Array.isArray(adminParams.cablingTiers) ? adminParams.cablingTiers : [];
-  const threeTiers = Array.isArray(adminParams.cablingTiersThreePhase) ? adminParams.cablingTiersThreePhase : [];
-  const tiers = (phase === 'three' && threeTiers.length > 0) ? threeTiers : singleTiers;
+  const singleTiers = Array.isArray(adminParams.cablingTiers)
+    ? adminParams.cablingTiers
+    : [];
+  const threeTiers = Array.isArray(adminParams.cablingTiersThreePhase)
+    ? adminParams.cablingTiersThreePhase
+    : [];
+  const tiers =
+    phase === "three" && threeTiers.length > 0 ? threeTiers : singleTiers;
 
   if (tiers.length === 0) {
     const t = FALLBACK_CABLING_TIER;
@@ -476,11 +640,16 @@ function cablingTotalPct(panelCount, adminParams, phase) {
     if (tier.minPanels <= panelCount) chosen = tier;
     else break;
   }
-  return chosen.dcCablePct + chosen.acCablePct + chosen.conduitsPct + chosen.panelBoardPct;
+  return (
+    chosen.dcCablePct +
+    chosen.acCablePct +
+    chosen.conduitsPct +
+    chosen.panelBoardPct
+  );
 }
 
 function panelDirectPrice(phase, runtime) {
-  return phase === 'three'
+  return phase === "three"
     ? runtime.panelSettings.threePhase.panelDirectPrice
     : runtime.panelSettings.singlePhase.panelDirectPrice;
 }
@@ -493,8 +662,8 @@ function resolveBatteryPackage(adminParams, batteryPackageId) {
   }
   if (list.length > 0) return list[0];
   return {
-    id: 'fallback',
-    label: '5 kWh',
+    id: "fallback",
+    label: "5 kWh",
     batteryUnitKwh: 5,
     batteryUnitPrice: 0,
     batteryRackCapacity: 3,
@@ -524,29 +693,35 @@ function buildPackageLineItems(state, adminParams, runtime) {
 
   const rtoRate = effectiveRtoRate(panelCount, adminParams);
   const monthlyRate = rtoRate / 12;
-  const toRto = (direct) => (direct ? PMT(monthlyRate, 60, -direct, 0, 1) * 60 : 0);
+  const toRto = (direct) =>
+    direct ? PMT(monthlyRate, 60, -direct, 0, 1) * 60 : 0;
 
-  const panelWatts = phase === 'three'
-    ? runtime.panelSettings.threePhase.panelWatts
-    : runtime.panelSettings.singlePhase.panelWatts;
-  const systemKwp = panelCount * panelWatts / 1000;
+  const panelWatts =
+    phase === "three"
+      ? runtime.panelSettings.threePhase.panelWatts
+      : runtime.panelSettings.singlePhase.panelWatts;
+  const systemKwp = (panelCount * panelWatts) / 1000;
   const panelPriceEa = panelDirectPrice(phase, runtime);
 
   const items = [];
   const panelsTotal = panelCount * panelPriceEa;
   items.push({
-    key: 'panels',
+    key: "panels",
     description: `${panelCount} units ${panelWatts}W Solar Panels`,
     directPrice: panelsTotal,
     rto60Price: toRto(panelsTotal),
   });
 
-  const mountingDirect = panelsTotal === 0
-    ? 0
-    : Math.max(adminParams.mountingSupportFloorPrice, panelsTotal * adminParams.mountingSupportPctOfPanels);
+  const mountingDirect =
+    panelsTotal === 0
+      ? 0
+      : Math.max(
+          adminParams.mountingSupportFloorPrice,
+          panelsTotal * adminParams.mountingSupportPctOfPanels,
+        );
   items.push({
-    key: 'mounting',
-    description: 'Mounting Support',
+    key: "mounting",
+    description: "Mounting Support",
     directPrice: mountingDirect,
     rto60Price: toRto(mountingDirect),
   });
@@ -554,75 +729,94 @@ function buildPackageLineItems(state, adminParams, runtime) {
   const cablingPct = cablingTotalPct(panelCount, adminParams, phase);
   const cablingDirect = panelsTotal === 0 ? 0 : cablingPct * panelsTotal;
   items.push({
-    key: 'cabling',
-    description: 'Cables, Conduits, Fittings, Panel Board & Other Devices',
+    key: "cabling",
+    description: "Cables, Conduits, Fittings, Panel Board & Other Devices",
     directPrice: cablingDirect,
     rto60Price: toRto(cablingDirect),
   });
 
-  const dcExtraMeters = Math.max(0, (dcCableMeters || 0) - INCLUDED_DC_CABLE_METERS);
-  const dcExtraDirect = panelsTotal === 0 ? 0 : dcExtraMeters * adminParams.additionalDcCablePerMeter;
+  const dcExtraMeters = Math.max(
+    0,
+    (dcCableMeters || 0) - INCLUDED_DC_CABLE_METERS,
+  );
+  const dcExtraDirect =
+    panelsTotal === 0
+      ? 0
+      : dcExtraMeters * adminParams.additionalDcCablePerMeter;
   items.push({
-    key: 'dcExtra',
+    key: "dcExtra",
     description: `${dcExtraMeters}m of Add'l. DC Cable`,
     directPrice: dcExtraDirect,
     rto60Price: toRto(dcExtraDirect),
   });
 
-  const acExtraMeters = Math.max(0, (acCableMeters || 0) - INCLUDED_AC_CABLE_METERS);
-  const acExtraDirect = panelsTotal === 0 ? 0 : acExtraMeters * adminParams.additionalAcCablePerMeter;
+  const acExtraMeters = Math.max(
+    0,
+    (acCableMeters || 0) - INCLUDED_AC_CABLE_METERS,
+  );
+  const acExtraDirect =
+    panelsTotal === 0
+      ? 0
+      : acExtraMeters * adminParams.additionalAcCablePerMeter;
   items.push({
-    key: 'acExtra',
+    key: "acExtra",
     description: `${acExtraMeters}m of Add'l. AC Cable`,
     directPrice: acExtraDirect,
     rto60Price: toRto(acExtraDirect),
   });
 
-  const fixedOverheadDirect = adminParams.fixedOverheadDeliveryLogistics
-    + adminParams.fixedOverheadWarehouse
-    + adminParams.fixedOverheadCustoms
-    + adminParams.fixedOverheadSafetySupervision
-    + adminParams.fixedOverheadTesting;
-  const laborDirect = systemKwp * adminParams.laborInstallationPerKwp
-    + (panelsTotal === 0 ? 0 : fixedOverheadDirect);
+  const fixedOverheadDirect =
+    adminParams.fixedOverheadDeliveryLogistics +
+    adminParams.fixedOverheadWarehouse +
+    adminParams.fixedOverheadCustoms +
+    adminParams.fixedOverheadSafetySupervision +
+    adminParams.fixedOverheadTesting;
+  const laborDirect =
+    systemKwp * adminParams.laborInstallationPerKwp +
+    (panelsTotal === 0 ? 0 : fixedOverheadDirect);
   items.push({
-    key: 'labor',
-    description: 'Solar Labor & Installation',
+    key: "labor",
+    description: "Solar Labor & Installation",
     directPrice: laborDirect,
     rto60Price: toRto(laborDirect),
   });
 
   let rsdDirect = 0;
   if (rsdEnabled && panelsTotal > 0) {
-    rsdDirect = panelCount * adminParams.rsdVariablePerPanel + adminParams.rsdFixedTransmitter;
+    rsdDirect =
+      panelCount * adminParams.rsdVariablePerPanel +
+      adminParams.rsdFixedTransmitter;
   }
   let rsdStandaloneDirect = 0;
   if (rsdEnabled && panelsTotal === 0 && (rsdStandalonePanelCount || 0) > 0) {
-    rsdStandaloneDirect = rsdStandalonePanelCount * adminParams.rsdVariablePerPanel + adminParams.rsdFixedTransmitter;
+    rsdStandaloneDirect =
+      rsdStandalonePanelCount * adminParams.rsdVariablePerPanel +
+      adminParams.rsdFixedTransmitter;
   }
   let rsdStandaloneLaborDirect = 0;
   if (rsdStandaloneDirect > 0) {
-    rsdStandaloneLaborDirect = rsdStandalonePanelCount * adminParams.rsdStandaloneLaborPerPanel
-      + adminParams.rsdStandaloneLaborMobilization;
+    rsdStandaloneLaborDirect =
+      rsdStandalonePanelCount * adminParams.rsdStandaloneLaborPerPanel +
+      adminParams.rsdStandaloneLaborMobilization;
   }
   const rsdPanelsForLabel = Math.max(panelCount, rsdStandalonePanelCount || 0);
   const rsdAnyDirect = rsdDirect + rsdStandaloneDirect;
   items.push({
-    key: 'rsd',
+    key: "rsd",
     description: `Rapid Shutdown Device (RSD) for ${rsdPanelsForLabel} Solar Panels`,
     directPrice: rsdAnyDirect,
     rto60Price: toRto(rsdAnyDirect),
   });
   items.push({
-    key: 'rsdLabor',
-    description: 'Labor & Installation for Standalone RSD order',
+    key: "rsdLabor",
+    description: "Labor & Installation for Standalone RSD order",
     directPrice: rsdStandaloneLaborDirect,
     rto60Price: toRto(rsdStandaloneLaborDirect),
   });
 
   selectedInverters.forEach((inv, i) => {
     const invDirect = inv ? inv.directPrice : 0;
-    const desc = inv ? `${Number(inv.ratedKw).toFixed(2)} kW Inverter` : 'None';
+    const desc = inv ? `${Number(inv.ratedKw).toFixed(2)} kW Inverter` : "None";
     items.push({
       key: `inverter${i}`,
       description: desc,
@@ -632,44 +826,53 @@ function buildPackageLineItems(state, adminParams, runtime) {
   });
 
   const pkg = resolveBatteryPackage(adminParams, state.batteryPackageId);
-  const batteryCount = (batteryKwh || 0) > 0 ? Math.ceil((batteryKwh || 0) / pkg.batteryUnitKwh) : 0;
-  const rackCount = batteryCount > 0 ? Math.ceil(batteryCount / pkg.batteryRackCapacity) : 0;
+  const batteryCount =
+    (batteryKwh || 0) > 0
+      ? Math.ceil((batteryKwh || 0) / pkg.batteryUnitKwh)
+      : 0;
+  const rackCount =
+    batteryCount > 0 ? Math.ceil(batteryCount / pkg.batteryRackCapacity) : 0;
   const batteryDirect = batteryCount * pkg.batteryUnitPrice;
   const rackDirect = rackCount * pkg.batteryRackPrice;
   const atsDirect = batteryKwh > 0 ? pkg.atsPrice : 0;
   const critLoadDirect = batteryKwh > 0 ? pkg.criticalLoadsMaterials : 0;
   const hasSolar = panelsTotal > 0;
-  const battLaborDirect = batteryKwh > 0 ? (hasSolar ? pkg.laborWithSolarInstall : pkg.standaloneLabor) : 0;
+  const battLaborDirect =
+    batteryKwh > 0
+      ? hasSolar
+        ? pkg.laborWithSolarInstall
+        : pkg.standaloneLabor
+      : 0;
   const battLaborLabel = hasSolar
-    ? 'Battery Labor & Installation w/ Solar Package Installation'
-    : 'Battery Standalone Labor & Installation';
+    ? "Battery Labor & Installation w/ Solar Package Installation"
+    : "Battery Standalone Labor & Installation";
 
   items.push({
-    key: 'battery',
+    key: "battery",
     description: `${batteryCount} unit/s ${pkg.batteryUnitKwh}kWh Battery w/ Cables & Lugs`,
     directPrice: batteryDirect,
     rto60Price: toRto(batteryDirect),
   });
   items.push({
-    key: 'rack',
+    key: "rack",
     description: `${rackCount} unit/s Battery Rack`,
     directPrice: rackDirect,
     rto60Price: toRto(rackDirect),
   });
   items.push({
-    key: 'ats',
-    description: 'Automatic Transfer Switch (ATS)',
+    key: "ats",
+    description: "Automatic Transfer Switch (ATS)",
     directPrice: atsDirect,
     rto60Price: toRto(atsDirect),
   });
   items.push({
-    key: 'critLoads',
-    description: 'Materials for Critical Loads',
+    key: "critLoads",
+    description: "Materials for Critical Loads",
     directPrice: critLoadDirect,
     rto60Price: toRto(critLoadDirect),
   });
   items.push({
-    key: 'batteryLabor',
+    key: "batteryLabor",
     description: battLaborLabel,
     directPrice: battLaborDirect,
     rto60Price: toRto(battLaborDirect),
@@ -678,50 +881,55 @@ function buildPackageLineItems(state, adminParams, runtime) {
   let invMobDirect = 0;
   const invCount = selectedInverters.filter((i) => i).length;
   if (panelsTotal === 0 && invCount > 0) {
-    invMobDirect = adminParams.inverterStandaloneLaborPerUnit * invCount
-      + adminParams.inverterStandaloneMobilization;
+    invMobDirect =
+      adminParams.inverterStandaloneLaborPerUnit * invCount +
+      adminParams.inverterStandaloneMobilization;
   }
   items.push({
-    key: 'invMob',
-    description: 'Mobilization for StandAlone Inverter Order',
+    key: "invMob",
+    description: "Mobilization for StandAlone Inverter Order",
     directPrice: invMobDirect,
     rto60Price: toRto(invMobDirect),
   });
 
   let roofDirect = 0;
-  let roofLabel = 'Roof Preparation (Metal - no prep needed)';
+  let roofLabel = "Roof Preparation (Metal - no prep needed)";
   if (panelsTotal > 0) {
-    if (roofMaterial === 'asphalt') {
+    if (roofMaterial === "asphalt") {
       roofDirect = systemKwp * adminParams.roofAsphaltPerKwp;
-      roofLabel = 'Roof Preparation - Asphalt / Shingles / Tiled';
-    } else if (roofMaterial === 'concrete') {
+      roofLabel = "Roof Preparation - Asphalt / Shingles / Tiled";
+    } else if (roofMaterial === "concrete") {
       roofDirect = systemKwp * adminParams.roofConcretePerKwp;
-      roofLabel = 'Roof Preparation - Concrete';
+      roofLabel = "Roof Preparation - Concrete";
     }
   }
   items.push({
-    key: 'roof',
+    key: "roof",
     description: roofLabel,
     directPrice: roofDirect,
     rto60Price: toRto(roofDirect),
   });
 
   let locationDirect = 0;
-  let locationLabel = 'Location / Delivery - Luzon (within 30km)';
+  let locationLabel = "Location / Delivery - Luzon (within 30km)";
   if (panelsTotal > 0) {
-    if (location === 'cebu') {
-      locationDirect = adminParams.cebuFixedFee + panelCount * adminParams.cebuPerPanel;
-      locationLabel = 'Location / Delivery - Cebu';
-    } else if (location === 'siargao') {
-      locationDirect = adminParams.siargaoFixedFee + panelCount * adminParams.siargaoPerPanel;
-      locationLabel = 'Location / Delivery - Siargao';
-    } else if (location === 'luzon' && (locationKm || 0) > 30) {
-      locationDirect = adminParams.luzonOver30FixedFee + (locationKm || 0) * adminParams.luzonOver30PerKm;
+    if (location === "cebu") {
+      locationDirect =
+        adminParams.cebuFixedFee + panelCount * adminParams.cebuPerPanel;
+      locationLabel = "Location / Delivery - Cebu";
+    } else if (location === "siargao") {
+      locationDirect =
+        adminParams.siargaoFixedFee + panelCount * adminParams.siargaoPerPanel;
+      locationLabel = "Location / Delivery - Siargao";
+    } else if (location === "luzon" && (locationKm || 0) > 30) {
+      locationDirect =
+        adminParams.luzonOver30FixedFee +
+        (locationKm || 0) * adminParams.luzonOver30PerKm;
       locationLabel = `Location / Delivery - Luzon (${locationKm} km from Rizal Park)`;
     }
   }
   items.push({
-    key: 'location',
+    key: "location",
     description: locationLabel,
     directPrice: locationDirect,
     rto60Price: toRto(locationDirect),
@@ -729,7 +937,12 @@ function buildPackageLineItems(state, adminParams, runtime) {
 
   (miscMaterials || []).forEach((row, i) => {
     if (!row.description || !row.count || !row.unitPrice) {
-      items.push({ key: `misc${i}`, description: '', directPrice: 0, rto60Price: 0 });
+      items.push({
+        key: `misc${i}`,
+        description: "",
+        directPrice: 0,
+        rto60Price: 0,
+      });
       return;
     }
     const dir = row.count * row.unitPrice;
@@ -759,21 +972,51 @@ function computePaymentTerms(state, adminParams, packageData) {
   const { totalRto60, rtoRate } = packageData;
   const monthlyRate = rtoRate / 12;
 
-  const promo = adminParams.promoCodes.find((p) => p.code === (promoCode || '').trim().toUpperCase());
+  const promo = adminParams.promoCodes.find(
+    (p) => p.code === (promoCode || "").trim().toUpperCase(),
+  );
   const promoDiscount = promo ? promo.discount : 0;
   const discountAmount = -promoDiscount * totalRto60;
   const stepTwoTotalLessDiscount = totalRto60 + discountAmount;
 
-  const directPurchasePrice = PV(monthlyRate, 60, -stepTwoTotalLessDiscount / 60, 0, 1);
-  const monthlyForFullPv = PMT(monthlyRate, tenor, -directPurchasePrice, 0, 1);
-  const totalPaymentsOverTenor = monthlyForFullPv * tenor;
-  const dpAmount = downPaymentPct * totalPaymentsOverTenor;
+  const directPurchasePrice = PV(
+    monthlyRate,
+    60,
+    -stepTwoTotalLessDiscount / 60,
+    0,
+    1,
+  );
+  const safeTenor = Math.max(
+    1,
+    Math.min(
+      Number.isInteger(adminParams.maxTenorMonths)
+        ? adminParams.maxTenorMonths
+        : 60,
+      Math.round(tenor),
+    ),
+  );
+  const monthlyForFullPv = PMT(
+    monthlyRate,
+    safeTenor,
+    -directPurchasePrice,
+    0,
+    1,
+  );
+  const totalPaymentsOverTenor = monthlyForFullPv * safeTenor;
+
+  const minDpPct = resolveMinDpPct(
+    adminParams.minDpTiers,
+    totalPaymentsOverTenor,
+  );
+  const safeDpPct = Math.max(minDpPct, Math.min(0.5, downPaymentPct || 0));
+
+  const dpAmount = safeDpPct * totalPaymentsOverTenor;
   const dpTotalCharge = dpAmount;
   const dpFvOneMonth = dpAmount * (1 + monthlyRate);
   const postDpPv = directPurchasePrice - dpFvOneMonth;
-  const monthlyAfterDp = PMT(monthlyRate, tenor, -postDpPv, 0, 1);
+  const monthlyAfterDp = PMT(monthlyRate, safeTenor, -postDpPv, 0, 1);
   const postInstallBalance = totalPaymentsOverTenor - dpAmount;
-  const netBalanceOverTenor = monthlyAfterDp * tenor;
+  const netBalanceOverTenor = monthlyAfterDp * safeTenor;
   const savingsFromDp = netBalanceOverTenor - postInstallBalance;
   const customerMonthlyPmt = monthlyAfterDp;
   const finalPostInstallBalance = netBalanceOverTenor;
@@ -788,6 +1031,9 @@ function computePaymentTerms(state, adminParams, packageData) {
     monthlyForFullPv,
     totalPaymentsOverTenor,
     epdAmount: totalPaymentsOverTenor - stepTwoTotalLessDiscount,
+    minDpPct,
+    usedDpPct: safeDpPct,
+    usedTenor: safeTenor,
     dpAmount,
     dpTotalCharge,
     postDpPv,
