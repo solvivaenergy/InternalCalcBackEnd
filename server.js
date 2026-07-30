@@ -77,9 +77,12 @@ app.get("/api/parameters", async (_req, res) => {
 
 app.put("/api/parameters", async (req, res) => {
   try {
-    const suppliedPassword = req.headers["x-solviva-edit-password"] || "";
+    const authHeader = req.headers["authorization"] || "";
+    const accessToken = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
     const claimedRole = req.headers["x-solviva-role"] || "";
-    const result = await putParameters(req.body, claimedRole, suppliedPassword);
+    const result = await putParameters(req.body, accessToken, claimedRole);
     return res.status(result.status).json(result.payload);
   } catch (error) {
     return res.status(500).json({

@@ -4,11 +4,22 @@ const TABLE = "app_parameters";
 
 const EDIT_ROLES = new Set(["edit", "engineering", "product"]);
 
+// Maps a role stored in public.user_roles (app_role enum) to the internal
+// admin edit-role vocabulary this service enforces. Only these DB roles may
+// write parameters; 'view', 'rep', 'customer' (and anything unmapped) are
+// read-only and get a 403.
+const DB_ROLE_TO_EDIT_ROLE = {
+  admin: "edit",
+  engineering: "engineering",
+  product: "product",
+};
+
 const ROLE_ADMIN_SECTIONS = {
   engineering: new Set([
     "solarPanel",
     "variableCharges",
     "roofMaterial",
+    "miscCatalog",
     "location",
     "cabling",
     "batteryPackage",
@@ -18,6 +29,7 @@ const ROLE_ADMIN_SECTIONS = {
     "maintenance",
   ]),
   product: new Set([
+    "margins",
     "quoteValidity",
     "quoteLimits",
     "step1Defaults",
@@ -32,75 +44,127 @@ const ROLE_INVENTORY_ACCESS = {
   product: false,
 };
 
+// Mirror of the frontend's PARAM_KEY_TO_SECTION (src/lib/permissions.js). This
+// is the server-side security boundary: only keys listed here can be written,
+// and only by a role whose allowlist includes the mapped section. Keep in sync
+// with the frontend map — the app is COGS-based (v3-83+), so the editable keys
+// are the `*Cogs` inputs plus the array/structural params below.
 const PARAM_KEY_TO_SECTION = {
-  baseRtoInterestRate: "interestRates",
-  smallPackagePanelThreshold: "interestRates",
-  smallPackageRiskPremiumBps: "interestRates",
+  // Margins & Merchant Discount (the two levers that drive every derived price)
+  financingEntityName: "margins",
+  financingEntityIsSeparate: "margins",
+  grossMarginMinKwp: "margins",
+  grossMarginMidKwp: "margins",
+  grossMarginMaxKwp: "margins",
+  grossMarginMin: "margins",
+  grossMarginMid: "margins",
+  grossMarginMax: "margins",
+  grossMarginReference: "margins",
+  merchantDiscountRate: "margins",
+  // Interest Rates
+  rateAnchorMax: "interestRates",
+  rateAnchorMid: "interestRates",
+  rateAnchorMin: "interestRates",
+  rateTenorWeight: "interestRates",
+  rateStepPct: "interestRates",
   earlyPayoffDiscountRate: "interestRates",
-
-  minSystemKwp: "quoteLimits",
-  minDpTiers: "quoteLimits",
-  maxTenorMonths: "quoteLimits",
-
-  defaultUtilityRate: "step1Defaults",
-  defaultMonthlyBill: "step1Defaults",
-
-  mountingSupportFloorPrice: "solarPanel",
+  documentaryStampTaxRate: "interestRates",
+  // Solar Panel & Mounting
+  mountingSupportFloorCogs: "solarPanel",
   mountingSupportPctOfPanels: "solarPanel",
-
-  additionalDcCablePerMeter: "variableCharges",
-  additionalAcCablePerMeter: "variableCharges",
-  laborInstallationPerKwp: "variableCharges",
-  rsdVariablePerPanel: "variableCharges",
-  rsdFixedTransmitter: "variableCharges",
-
-  roofAsphaltPerKwp: "roofMaterial",
-  roofConcretePerKwp: "roofMaterial",
-
-  cebuFixedFee: "location",
-  cebuPerPanel: "location",
-  siargaoFixedFee: "location",
-  siargaoPerPanel: "location",
-  luzonOver30FixedFee: "location",
-  luzonOver30PerKm: "location",
-
+  // Variable Charges
+  additionalDcCablePerMeterCogs: "variableCharges",
+  additionalAcCablePerMeterCogs: "variableCharges",
+  laborInstallationPerKwpCogs: "variableCharges",
+  rsdVariablePerPanelCogs: "variableCharges",
+  rsdFixedTransmitterCogs: "variableCharges",
+  rsdAvailable: "variableCharges",
+  // Roof Material
+  roofAsphaltPerKwpCogs: "roofMaterial",
+  roofConcretePerKwpCogs: "roofMaterial",
+  // Misc Materials / Labor / Services catalog (v3-138)
+  miscCatalog: "miscCatalog",
+  // Location / Delivery
+  deliveryLocations: "location",
+  luzonOver30FixedFeeCogs: "location",
+  luzonOver30PerKmCogs: "location",
+  // Cabling
   cablingTiers: "cabling",
   cablingTiersThreePhase: "cabling",
-
+  // Battery Packages
   batteryPackages: "batteryPackage",
-
-  rsdStandaloneLaborPerPanel: "standaloneCharges",
-  rsdStandaloneLaborMobilization: "standaloneCharges",
-  inverterStandaloneLaborPerUnit: "standaloneCharges",
-  inverterStandaloneMobilization: "standaloneCharges",
-
-  fixedOverheadDeliveryLogistics: "fixedOverhead",
-  fixedOverheadWarehouse: "fixedOverhead",
-  fixedOverheadCustoms: "fixedOverhead",
-  fixedOverheadSafetySupervision: "fixedOverhead",
-  fixedOverheadTesting: "fixedOverhead",
-
+  // Standalone Retrofit Charges
+  rsdStandaloneLaborPerPanelCogs: "standaloneCharges",
+  rsdStandaloneLaborMobilizationCogs: "standaloneCharges",
+  inverterStandaloneLaborPerUnitCogs: "standaloneCharges",
+  inverterStandaloneMobilizationCogs: "standaloneCharges",
+  // Fixed Overhead
+  fixedOverheadDeliveryLogisticsCogs: "fixedOverhead",
+  fixedOverheadWarehouseCogs: "fixedOverhead",
+  fixedOverheadCustomsCogs: "fixedOverhead",
+  fixedOverheadSafetySupervisionCogs: "fixedOverhead",
+  fixedOverheadTestingCogs: "fixedOverhead",
+  // Schedule Constants
   kWhPerKwpPerDay: "scheduleConstants",
   batteryEfficiency: "scheduleConstants",
+  maxDailySpillKwh: "scheduleConstants",
   batteryDepthOfDischarge: "scheduleConstants",
   panelAnnualDegradation: "scheduleConstants",
   lcoeNpvDiscountRate: "scheduleConstants",
   maintenanceInflationRate: "scheduleConstants",
   netMeteringEfficiency: "scheduleConstants",
-  preventiveMaintenancePerPanel: "scheduleConstants",
-  preventiveMaintenancePerVisit: "scheduleConstants",
+  preventiveMaintenancePerPanelCogs: "scheduleConstants",
+  preventiveMaintenancePerVisitCogs: "scheduleConstants",
   minDaysToFirstPostInstallPayment: "scheduleConstants",
-
+  // Promo Codes
   promoCodes: "promoCodes",
+  // Quote Validity
   quoteValidityDays: "quoteValidity",
+  // Quote Limits (v3-68)
+  minSystemKwp: "quoteLimits",
+  minDpTiers: "quoteLimits",
+  maxTenorMonths: "quoteLimits",
+  // Step 1 Defaults (v3-70)
+  defaultUtilityRate: "step1Defaults",
+  defaultMonthlyBill: "step1Defaults",
+  // Maintenance Mode
   gateAuthEnabled: "maintenance",
 };
 
-function envVarForRole(role) {
-  if (role === "edit") return "VITE_SUPERADMIN_PASSWORD";
-  if (role === "engineering") return "VITE_ENGINEERING_PASSWORD";
-  if (role === "product") return "VITE_PRODUCT_PASSWORD";
-  return null;
+// Verifies the caller's Supabase JWT and resolves their edit-role from
+// public.user_roles. Returns { role } on success or { status, error } on
+// failure. The service-role client can both validate the token
+// (auth.getUser) and read user_roles under RLS-bypass.
+async function resolveEditRole(supabase, accessToken) {
+  if (!accessToken) {
+    return { status: 401, error: "Missing bearer token" };
+  }
+  const { data: userData, error: userError } =
+    await supabase.auth.getUser(accessToken);
+  if (userError || !userData?.user) {
+    return { status: 401, error: "Invalid or expired session token" };
+  }
+  const userId = userData.user.id;
+  const { data: roleRow, error: roleError } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (roleError) {
+    return {
+      status: 500,
+      error: `Failed to look up user role: ${roleError.message}`,
+    };
+  }
+  const dbRole = roleRow?.role;
+  const editRole = DB_ROLE_TO_EDIT_ROLE[dbRole];
+  if (!editRole) {
+    return {
+      status: 403,
+      error: "Your account does not have permission to edit parameters.",
+    };
+  }
+  return { role: editRole, userId };
 }
 
 function canRoleEditAdminSection(role, sectionKey) {
@@ -163,35 +227,24 @@ export async function getParameters() {
   return await readCurrentPayload(supabase);
 }
 
-export async function putParameters(body, claimedRole, suppliedPassword) {
-  if (!EDIT_ROLES.has(claimedRole)) {
-    return {
-      status: 401,
-      payload: { error: "Missing or invalid role header" },
-    };
-  }
-  const envVarName = envVarForRole(claimedRole);
-  const expected = process.env[envVarName];
-  if (!expected) {
-    return {
-      status: 500,
-      payload: {
-        error: `Server is missing ${envVarName} env var. Configure it on Render.`,
-      },
-    };
-  }
-  if (suppliedPassword !== expected) {
-    return {
-      status: 401,
-      payload: { error: "Invalid password for declared role" },
-    };
-  }
-
+export async function putParameters(body, accessToken, claimedRole) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { status: 400, payload: { error: "Body must be a JSON object" } };
   }
 
   const supabase = getSupabaseClient();
+
+  const auth = await resolveEditRole(supabase, accessToken);
+  if (auth.error) {
+    return { status: auth.status, payload: { error: auth.error } };
+  }
+  // The JWT-derived role is authoritative. `claimedRole` (the x-solviva-role
+  // header) is advisory only — logged for diagnostics, never trusted.
+  const role = auth.role;
+  if (!EDIT_ROLES.has(role)) {
+    return { status: 403, payload: { error: "Role has no edit access" } };
+  }
+
   const current = await readCurrentPayload(supabase);
 
   const merged = {
@@ -249,7 +302,7 @@ export async function putParameters(body, claimedRole, suppliedPassword) {
         ignoredAdminKeys.push(key);
         continue;
       }
-      if (!canRoleEditAdminSection(claimedRole, sectionKey)) {
+      if (!canRoleEditAdminSection(role, sectionKey)) {
         ignoredAdminKeys.push(key);
         continue;
       }
@@ -259,7 +312,7 @@ export async function putParameters(body, claimedRole, suppliedPassword) {
   }
 
   let inventoryApplied = false;
-  if (canRoleEditInventory(claimedRole)) {
+  if (canRoleEditInventory(role)) {
     if (body.panelSettings) {
       merged.panelSettings = body.panelSettings;
       inventoryApplied = true;
@@ -453,7 +506,7 @@ export async function putParameters(body, claimedRole, suppliedPassword) {
     payload: {
       ok: true,
       savedAt: new Date().toISOString(),
-      role: claimedRole,
+      role: role,
       appliedAdminKeys,
       ignoredAdminKeys,
       inventoryApplied,

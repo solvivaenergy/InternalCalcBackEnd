@@ -194,6 +194,122 @@ function resolveSelectedInverters(phase, raw, runtime) {
   });
 }
 
+// =============================================================================
+// PARAMETER SOURCE OF TRUTH — the `app_parameters` blob (Option A)
+// -----------------------------------------------------------------------------
+// The admin pipeline (parametersService.js) persists a SINGLE JSON snapshot to
+// `app_parameters.payload`:
+//     { adminParams, panelSettings, invertersSinglePhase,
+//       invertersThreePhase, devices }
+// This is the exact shape the frontend paramsService produces. We read the same
+// blob here so admin edits reflect in quotes immediately — no separate
+// normalized tables to keep in sync.
+//
+// Prices in the blob are DERIVED from COGS at the reference margin. They can be
+// stale (the frontend re-derives them at boot, not necessarily before every
+// PUT), so we re-derive here from COGS, mirroring the frontend exactly. That
+// guarantees the quote engine prices match what the admin sees.
+// =============================================================================
+const PARAMS_TABLE = "app_parameters";
+const VAT_RATE = 0.12; // Philippine VAT — a constant, not a param (mirrors frontend).
+
+function deepClone(v) {
+  if (v == null) return null;
+  return JSON.parse(JSON.stringify(v));
+}
+
+// Port of the frontend's directFromCogs() (calculations.js). Marks up pre-VAT
+// COGS to an ex-VAT direct price at the given margin, netting out the acquirer's
+// merchant-discount cut and the VAT remittance. Returns 0 for non-positive or
+// degenerate inputs rather than throwing.
+function directFromCogs(cogs, adminParams, marginOverride) {
+  const ap = adminParams || {};
+  const gm =
+    marginOverride ??
+    ap.grossMarginReference ??
+    ap.grossMarginMax ??
+    ap.grossMargin ??
+    0;
+  const mdr = ap.merchantDiscountRate ?? 0;
+  const c = Number(cogs);
+  if (!Number.isFinite(c) || c <= 0) return 0;
+  const retained = (1 + VAT_RATE) * (1 - mdr) - VAT_RATE;
+  if (!(retained > 0) || !(1 - gm > 0)) return 0;
+  return Math.ceil((c * (1 + VAT_RATE)) / (1 - gm) / retained);
+}
+
+// Port of the frontend's deriveDirectPrices() (calculations.js). Rewrites every
+// derived price field from its COGS source, in place, at the reference margin.
+function deriveDirectPrices(
+  ap,
+  panelSettings,
+  invertersSP,
+  invertersTP,
+  margin,
+) {
+  const d = (c) => directFromCogs(c, ap, margin);
+
+  if (panelSettings?.singlePhase)
+    panelSettings.singlePhase.panelDirectPrice = d(
+      panelSettings.singlePhase.panelCogs,
+    );
+  if (panelSettings?.threePhase)
+    panelSettings.threePhase.panelDirectPrice = d(
+      panelSettings.threePhase.panelCogs,
+    );
+  for (const inv of invertersSP || []) inv.directPrice = d(inv.cogs);
+  for (const inv of invertersTP || []) inv.directPrice = d(inv.cogs);
+
+  const MAP = {
+    mountingSupportFloorPrice: "mountingSupportFloorCogs",
+    additionalDcCablePerMeter: "additionalDcCablePerMeterCogs",
+    additionalAcCablePerMeter: "additionalAcCablePerMeterCogs",
+    laborInstallationPerKwp: "laborInstallationPerKwpCogs",
+    rsdVariablePerPanel: "rsdVariablePerPanelCogs",
+    rsdFixedTransmitter: "rsdFixedTransmitterCogs",
+    roofAsphaltPerKwp: "roofAsphaltPerKwpCogs",
+    roofConcretePerKwp: "roofConcretePerKwpCogs",
+    luzonOver30FixedFee: "luzonOver30FixedFeeCogs",
+    luzonOver30PerKm: "luzonOver30PerKmCogs",
+    rsdStandaloneLaborPerPanel: "rsdStandaloneLaborPerPanelCogs",
+    rsdStandaloneLaborMobilization: "rsdStandaloneLaborMobilizationCogs",
+    inverterStandaloneLaborPerUnit: "inverterStandaloneLaborPerUnitCogs",
+    inverterStandaloneMobilization: "inverterStandaloneMobilizationCogs",
+    fixedOverheadDeliveryLogistics: "fixedOverheadDeliveryLogisticsCogs",
+    fixedOverheadWarehouse: "fixedOverheadWarehouseCogs",
+    fixedOverheadCustoms: "fixedOverheadCustomsCogs",
+    fixedOverheadSafetySupervision: "fixedOverheadSafetySupervisionCogs",
+    fixedOverheadTesting: "fixedOverheadTestingCogs",
+    preventiveMaintenancePerPanel: "preventiveMaintenancePerPanelCogs",
+    preventiveMaintenancePerVisit: "preventiveMaintenancePerVisitCogs",
+  };
+  for (const [priceKey, cogsKey] of Object.entries(MAP)) {
+    if (cogsKey in ap) ap[priceKey] = d(ap[cogsKey]);
+  }
+
+  const B = {
+    batteryUnitPrice: "batteryUnitCogs",
+    batteryRackPrice: "batteryRackCogs",
+    atsPrice: "atsCogs",
+    criticalLoadsMaterials: "criticalLoadsMaterialsCogs",
+    laborWithSolarInstall: "laborWithSolarInstallCogs",
+    standaloneLabor: "standaloneLaborCogs",
+  };
+  for (const loc of ap.deliveryLocations || []) {
+    loc.fixedFee = d(loc.fixedFeeCogs);
+    loc.perPanel = d(loc.perPanelCogs);
+  }
+  for (const m of ap.miscCatalog || []) {
+    m.price = d(m.cogs);
+  }
+  for (const pkg of ap.batteryPackages || []) {
+    for (const [priceKey, cogsKey] of Object.entries(B)) {
+      pkg[priceKey] = d(pkg[cogsKey]);
+    }
+  }
+  return ap;
+}
+
 async function loadRuntimeDataFromSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -208,259 +324,116 @@ async function loadRuntimeDataFromSupabase() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const singletonTables = [
-    "interest_rates",
-    "mounting_support",
-    "variable_charges",
-    "roof_material_rates",
-    "location_delivery_charges",
-    "rsd_pricing",
-    "standalone_retrofit_charges",
-    "fixed_overhead",
-    "schedule_constants",
-    "quote_settings",
-    "maintenance_mode",
-  ];
-
-  const [
-    interestRates,
-    mountingSupport,
-    variableCharges,
-    roofMaterialRates,
-    locationDelivery,
-    rsdPricing,
-    standaloneCharges,
-    fixedOverhead,
-    scheduleConstants,
-    quoteSettings,
-    maintenanceMode,
-    cablingRows,
-    batteryPackages,
-    promoCodes,
-    devices,
-    panelSettings,
-    inverters,
-    deviceSettings,
-  ] = await Promise.all([
-    ...singletonTables.map((t) => fetchSingleton(supabase, t)),
-    fetchMany(
-      supabase,
-      "cabling_tiers",
-      "phase,min_panels,dc_cable_pct,ac_cable_pct,conduits_pct,panel_board_pct",
-      { orderBy: "min_panels" },
-    ),
-    fetchMany(
-      supabase,
-      "battery_packages",
-      "id,label,battery_unit_kwh,battery_unit_price,battery_rack_capacity,battery_rack_price,ats_price,critical_loads_materials,labor_with_solar_install,standalone_labor,sort_order",
-      { orderBy: "sort_order" },
-    ),
-    fetchMany(supabase, "promo_codes", "code,label,discount", {
-      orderBy: "code",
-    }),
-    fetchMany(supabase, "devices", "name,peak_kw,duty_factor", {
-      orderBy: "name",
-    }),
-    fetchMany(
-      supabase,
-      "panel_settings",
-      "phase,panel_watts,panel_direct_price,max_dc_ac_ratio",
-    ),
-    fetchMany(supabase, "inverters", "phase,rated_kw,direct_price", {
-      orderBy: "rated_kw",
-    }),
-    fetchSingletonOptional(supabase, "device_settings"),
-  ]);
-
-  if (!devices.length)
-    throw new Error("No device rows found in devices table.");
-  if (!panelSettings.length)
-    throw new Error("No panel settings found in panel_settings table.");
-  if (!inverters.length)
-    throw new Error("No inverter rows found in inverters table.");
-  if (!batteryPackages.length)
-    throw new Error("No battery package rows found in battery_packages table.");
-
-  const singleTiers = cablingRows
-    .filter((r) => r.phase === "single")
-    .map(mapCablingTier);
-  const threeTiers = cablingRows
-    .filter((r) => r.phase === "three")
-    .map(mapCablingTier);
-
-  const panelSingle = panelSettings.find((p) => p.phase === "single");
-  const panelThree = panelSettings.find((p) => p.phase === "three");
-  if (!panelSingle || !panelThree) {
+  const { data, error } = await supabase
+    .from(PARAMS_TABLE)
+    .select("payload")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) {
     throw new Error(
-      "panel_settings must include both single and three phase rows.",
+      `Supabase query failed for ${PARAMS_TABLE}: ${error.message}`,
     );
   }
 
-  const invertersSinglePhase = inverters
-    .filter((i) => i.phase === "single")
-    .map((i) => ({
-      ratedKw: Number(i.rated_kw),
-      directPrice: Number(i.direct_price),
-    }));
-  const invertersThreePhase = inverters
-    .filter((i) => i.phase === "three")
-    .map((i) => ({
-      ratedKw: Number(i.rated_kw),
-      directPrice: Number(i.direct_price),
-    }));
+  const payload =
+    data?.payload && typeof data.payload === "object"
+      ? deepClone(data.payload)
+      : {};
+
+  const adminParams = payload.adminParams || {};
+  const panelSettings = payload.panelSettings || {};
+  const invertersSP = Array.isArray(payload.invertersSinglePhase)
+    ? payload.invertersSinglePhase
+    : [];
+  const invertersTP = Array.isArray(payload.invertersThreePhase)
+    ? payload.invertersThreePhase
+    : [];
+  const devices = Array.isArray(payload.devices) ? payload.devices : [];
+
+  // Re-derive every price from COGS at the reference margin, exactly like the
+  // frontend does on boot — so the quote engine can never read a stale price.
+  deriveDirectPrices(
+    adminParams,
+    panelSettings,
+    invertersSP,
+    invertersTP,
+    adminParams.grossMarginReference,
+  );
+
+  // Location shim (frontend v3-116): the four cebu/siargao scalar fees became a
+  // dynamic `deliveryLocations` array whose seed ids match the legacy location
+  // values. The quote engine still reads the scalar keys, so backfill them from
+  // the matching rows when present.
+  const findLoc = (id) =>
+    (adminParams.deliveryLocations || []).find((l) => l && l.id === id);
+  const cebuLoc = findLoc("cebu");
+  const siargaoLoc = findLoc("siargao");
+  if (cebuLoc) {
+    adminParams.cebuFixedFee = Number(cebuLoc.fixedFee) || 0;
+    adminParams.cebuPerPanel = Number(cebuLoc.perPanel) || 0;
+  }
+  if (siargaoLoc) {
+    adminParams.siargaoFixedFee = Number(siargaoLoc.fixedFee) || 0;
+    adminParams.siargaoPerPanel = Number(siargaoLoc.perPanel) || 0;
+  }
+
+  if (!devices.length) {
+    throw new Error("No device rows found in app_parameters payload.");
+  }
+  const panelSingle = panelSettings.singlePhase;
+  const panelThree = panelSettings.threePhase;
+  if (!panelSingle || !panelThree) {
+    throw new Error(
+      "app_parameters payload must include panelSettings.singlePhase and threePhase.",
+    );
+  }
+
+  const invertersSinglePhase = invertersSP.map((i) => ({
+    ratedKw: Number(i.ratedKw),
+    directPrice: Number(i.directPrice),
+  }));
+  const invertersThreePhase = invertersTP.map((i) => ({
+    ratedKw: Number(i.ratedKw),
+    directPrice: Number(i.directPrice),
+  }));
   if (!invertersSinglePhase.length || !invertersThreePhase.length) {
     throw new Error(
-      "inverters table must include both single and three phase rows.",
+      "app_parameters payload must include both single- and three-phase inverters.",
     );
+  }
+
+  // Guard the shape the quote engine hard-depends on. adminParams supplies all
+  // camelCase scalar keys directly from the blob.
+  if (!Array.isArray(adminParams.promoCodes)) adminParams.promoCodes = [];
+  if (!Array.isArray(adminParams.batteryPackages)) {
+    throw new Error("app_parameters payload must include batteryPackages.");
   }
 
   const runtime = {
-    dayStartHour: Number(
-      deviceSettings?.day_start_hour ?? FALLBACK_DAY_START_HOUR,
-    ),
+    dayStartHour: FALLBACK_DAY_START_HOUR,
     devices: devices.map((d) => ({
       name: d.name,
-      peakKw: Number(d.peak_kw),
-      dutyFactor: Number(d.duty_factor),
+      peakKw: Number(d.peakKw),
+      dutyFactor: Number(d.dutyFactor),
     })),
     panelSettings: {
       singlePhase: {
-        panelWatts: Number(panelSingle.panel_watts),
-        panelDirectPrice: Number(panelSingle.panel_direct_price),
-        maxDcAcRatio: Number(panelSingle.max_dc_ac_ratio),
+        panelWatts: Number(panelSingle.panelWatts),
+        panelDirectPrice: Number(panelSingle.panelDirectPrice),
+        maxDcAcRatio: Number(panelSingle.maxDcAcRatio),
       },
       threePhase: {
-        panelWatts: Number(panelThree.panel_watts),
-        panelDirectPrice: Number(panelThree.panel_direct_price),
-        maxDcAcRatio: Number(panelThree.max_dc_ac_ratio),
+        panelWatts: Number(panelThree.panelWatts),
+        panelDirectPrice: Number(panelThree.panelDirectPrice),
+        maxDcAcRatio: Number(panelThree.maxDcAcRatio),
       },
     },
     invertersSinglePhase,
     invertersThreePhase,
-  };
-
-  runtime.adminParams = {
-    baseRtoInterestRate: interestRates.base_rto_interest_rate,
-    smallPackagePanelThreshold: interestRates.small_package_panel_threshold,
-    smallPackageRiskPremiumBps: interestRates.small_package_risk_premium_bps,
-    earlyPayoffDiscountRate: interestRates.early_payoff_discount_rate,
-    mountingSupportFloorPrice: mountingSupport.floor_price,
-    mountingSupportPctOfPanels: mountingSupport.pct_of_panels,
-    cablingTiers: singleTiers,
-    cablingTiersThreePhase: threeTiers,
-    additionalDcCablePerMeter: variableCharges.additional_dc_cable_per_meter,
-    additionalAcCablePerMeter: variableCharges.additional_ac_cable_per_meter,
-    laborInstallationPerKwp: variableCharges.labor_installation_per_kwp,
-    roofAsphaltPerKwp: roofMaterialRates.asphalt_per_kwp,
-    roofConcretePerKwp: roofMaterialRates.concrete_per_kwp,
-    cebuFixedFee: locationDelivery.cebu_fixed_fee,
-    cebuPerPanel: locationDelivery.cebu_per_panel,
-    siargaoFixedFee: locationDelivery.siargao_fixed_fee,
-    siargaoPerPanel: locationDelivery.siargao_per_panel,
-    luzonOver30FixedFee: locationDelivery.luzon_over30_fixed_fee,
-    luzonOver30PerKm: locationDelivery.luzon_over30_per_km,
-    rsdVariablePerPanel: rsdPricing.rsd_variable_per_panel,
-    rsdFixedTransmitter: rsdPricing.rsd_fixed_transmitter,
-    rsdStandaloneLaborPerPanel:
-      standaloneCharges.rsd_standalone_labor_per_panel,
-    rsdStandaloneLaborMobilization:
-      standaloneCharges.rsd_standalone_labor_mobilization,
-    inverterStandaloneLaborPerUnit:
-      standaloneCharges.inverter_standalone_labor_per_unit,
-    inverterStandaloneMobilization:
-      standaloneCharges.inverter_standalone_mobilization,
-    fixedOverheadDeliveryLogistics: fixedOverhead.delivery_logistics,
-    fixedOverheadWarehouse: fixedOverhead.warehouse,
-    fixedOverheadCustoms: fixedOverhead.customs,
-    fixedOverheadSafetySupervision: fixedOverhead.safety_supervision,
-    fixedOverheadTesting: fixedOverhead.testing,
-    batteryPackages: batteryPackages.map((p) => ({
-      id: p.id,
-      label: p.label,
-      batteryUnitKwh: p.battery_unit_kwh,
-      batteryUnitPrice: p.battery_unit_price,
-      batteryRackCapacity: p.battery_rack_capacity,
-      batteryRackPrice: p.battery_rack_price,
-      atsPrice: p.ats_price,
-      criticalLoadsMaterials: p.critical_loads_materials,
-      laborWithSolarInstall: p.labor_with_solar_install,
-      standaloneLabor: p.standalone_labor,
-    })),
-    kWhPerKwpPerDay: scheduleConstants.kwh_per_kwp_per_day,
-    batteryEfficiency: scheduleConstants.battery_efficiency,
-    batteryDepthOfDischarge: scheduleConstants.battery_depth_of_discharge,
-    panelAnnualDegradation: scheduleConstants.panel_annual_degradation,
-    lcoeNpvDiscountRate: scheduleConstants.lcoe_npv_discount_rate,
-    maintenanceInflationRate: scheduleConstants.maintenance_inflation_rate,
-    netMeteringEfficiency: scheduleConstants.net_metering_efficiency,
-    preventiveMaintenancePerPanel:
-      scheduleConstants.preventive_maintenance_per_panel,
-    preventiveMaintenancePerVisit:
-      scheduleConstants.preventive_maintenance_per_visit,
-    minDaysToFirstPostInstallPayment:
-      scheduleConstants.min_days_to_first_post_install_payment,
-    promoCodes: promoCodes.map((p) => ({
-      code: p.code,
-      label: p.label,
-      discount: p.discount,
-    })),
-    minSystemKwp: Number(quoteSettings.min_system_kwp || 0),
-    minDpTiers: Array.isArray(quoteSettings.min_dp_tiers)
-      ? quoteSettings.min_dp_tiers
-      : [{ fromNetPrice: 0, minDpPct: 0 }],
-    maxTenorMonths: Number(quoteSettings.max_tenor_months || 60),
-    defaultUtilityRate: Number(quoteSettings.default_utility_rate || 15),
-    defaultMonthlyBill: Number(quoteSettings.default_monthly_bill || 15000),
-    quoteValidityDays: quoteSettings.quote_validity_days,
-    gateAuthEnabled: maintenanceMode.gate_auth_enabled,
+    adminParams,
   };
 
   return runtime;
-}
-
-async function fetchSingletonOptional(supabase, table) {
-  const { data, error } = await supabase
-    .from(table)
-    .select("*")
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    return null;
-  }
-  return data || null;
-}
-
-function mapCablingTier(row) {
-  return {
-    minPanels: row.min_panels,
-    dcCablePct: row.dc_cable_pct,
-    acCablePct: row.ac_cable_pct,
-    conduitsPct: row.conduits_pct,
-    panelBoardPct: row.panel_board_pct,
-  };
-}
-
-async function fetchSingleton(supabase, table) {
-  const { data, error } = await supabase
-    .from(table)
-    .select("*")
-    .limit(1)
-    .maybeSingle();
-  if (error)
-    throw new Error(`Supabase query failed for ${table}: ${error.message}`);
-  if (!data) throw new Error(`Missing required row in table ${table}.`);
-  return data;
-}
-
-async function fetchMany(supabase, table, columns, options = {}) {
-  let query = supabase.from(table).select(columns);
-  if (options.orderBy) {
-    query = query.order(options.orderBy, { ascending: true });
-  }
-  const { data, error } = await query;
-  if (error)
-    throw new Error(`Supabase query failed for ${table}: ${error.message}`);
-  return Array.isArray(data) ? data : [];
 }
 
 function PMT(rate, nper, pv, fv = 0, type = 0) {
