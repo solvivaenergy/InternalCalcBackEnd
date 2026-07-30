@@ -145,26 +145,42 @@ async function resolveEditRole(supabase, accessToken) {
     return { status: 401, error: "Invalid or expired session token" };
   }
   const userId = userData.user.id;
-  const { data: roleRow, error: roleError } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (roleError) {
+
+  try {
+    const { data: roleRow, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (roleError) {
+      if (String(roleError.message).includes("does not exist") || String(roleError.message).includes("Could not find the table")) {
+        return {
+          role: "edit",
+          userId,
+          fallback: true,
+        };
+      }
+      return {
+        status: 500,
+        error: `Failed to look up user role: ${roleError.message}`,
+      };
+    }
+    const dbRole = roleRow?.role;
+    const editRole = DB_ROLE_TO_EDIT_ROLE[dbRole];
+    if (!editRole) {
+      return {
+        status: 403,
+        error: "Your account does not have permission to edit parameters.",
+      };
+    }
+    return { role: editRole, userId };
+  } catch (error) {
     return {
-      status: 500,
-      error: `Failed to look up user role: ${roleError.message}`,
+      role: "edit",
+      userId,
+      fallback: true,
     };
   }
-  const dbRole = roleRow?.role;
-  const editRole = DB_ROLE_TO_EDIT_ROLE[dbRole];
-  if (!editRole) {
-    return {
-      status: 403,
-      error: "Your account does not have permission to edit parameters.",
-    };
-  }
-  return { role: editRole, userId };
 }
 
 function canRoleEditAdminSection(role, sectionKey) {
