@@ -153,7 +153,10 @@ async function resolveEditRole(supabase, accessToken) {
       .eq("user_id", userId)
       .maybeSingle();
     if (roleError) {
-      if (String(roleError.message).includes("does not exist") || String(roleError.message).includes("Could not find the table")) {
+      if (
+        String(roleError.message).includes("does not exist") ||
+        String(roleError.message).includes("Could not find the table")
+      ) {
         return {
           role: "edit",
           userId,
