@@ -238,6 +238,137 @@ function directFromCogs(cogs, adminParams, marginOverride) {
   return Math.ceil((c * (1 + VAT_RATE)) / (1 - gm) / retained);
 }
 
+// Acklam's inverse normal CDF — ported verbatim from the frontend
+// (calculations.js) so the backend margin curve is bit-for-bit identical.
+function normSInv(p) {
+  const a = [
+    -39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269,
+    -30.66479806614716, 2.506628277459239,
+  ];
+  const b = [
+    -54.47609879822406, 161.5858368580409, -155.6989798598866,
+    66.80131188771972, -13.28068155288572,
+  ];
+  const c = [
+    -0.007784894002430293, -0.3223964580411365, -2.400758277161838,
+    -2.549732539343734, 4.374664141464968, 2.938163982698783,
+  ];
+  const d = [
+    0.007784695709041462, 0.3224671290700398, 2.445134137142996,
+    3.754408661907416,
+  ];
+  const pLow = 0.02425;
+  let q, r;
+  if (p < pLow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (
+      (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+      ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+    );
+  }
+  if (p <= 1 - pLow) {
+    q = p - 0.5;
+    r = q * q;
+    return (
+      ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) *
+        q) /
+      (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+    );
+  }
+  q = Math.sqrt(-2 * Math.log(1 - p));
+  return (
+    -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+    ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+  );
+}
+
+const Z75 = normSInv(0.75); // 0.6744897…
+
+// Port of the frontend's grossMarginCurveFromAnchors() (calculations.js). The
+// GENLINV curve over kWp for an explicit anchor triple through the shared kWp
+// breakpoints. Returns q3/fallback for a degenerate axis rather than throwing.
+function grossMarginCurveFromAnchors(systemKwp, x1, x2, x3, q1, q2, q3, fallback) {
+  if (
+    ![x1, x2, x3, q1, q2, q3].every(Number.isFinite) ||
+    x3 <= x1 ||
+    x2 <= x1 ||
+    x2 >= x3
+  ) {
+    return Number.isFinite(q3)
+      ? q3
+      : Number.isFinite(fallback)
+        ? fallback
+        : 0;
+  }
+  const kwp = Number.isFinite(systemKwp) ? systemKwp : x3;
+  const x = Math.min(x3, Math.max(x1, kwp));
+  const kN = Math.log(0.5) / Math.log((x2 - x1) / (x3 - x1));
+  const u = Math.pow((x - x1) / (x3 - x1), kN);
+  const p = 0.25 + 0.5 * u;
+  const b = (q3 - q2) / (q2 - q1);
+  const z = normSInv(p) / Z75;
+  return Math.abs(b - 1) < 1e-9
+    ? q2 + (q3 - q2) * z
+    : q2 + ((q3 - q2) * (Math.pow(b, z) - 1)) / (b - 1);
+}
+
+// v3-142 — per-package margin anchor keys, mirroring the frontend. Each package
+// rides the shared kWp breakpoints through its own anchor triple; a package
+// whose anchors are absent falls back to the legacy grossMarginMin/Mid/Max.
+const PACKAGE_MARGIN_ANCHOR_KEYS = {
+  solar: ["grossMarginSolarMin", "grossMarginSolarMid", "grossMarginSolarMax"],
+  battery: [
+    "grossMarginBatteryMin",
+    "grossMarginBatteryMid",
+    "grossMarginBatteryMax",
+  ],
+  misc: ["grossMarginMiscMin", "grossMarginMiscMid", "grossMarginMiscMax"],
+};
+
+function resolvePackageMarginAnchors(adminParams, pkg) {
+  const ap = adminParams || {};
+  const keys = PACKAGE_MARGIN_ANCHOR_KEYS[pkg];
+  const pick = (k, legacy) => (Number.isFinite(ap[k]) ? ap[k] : ap[legacy]);
+  return {
+    q1: pick(keys[0], "grossMarginMin"),
+    q2: pick(keys[1], "grossMarginMid"),
+    q3: pick(keys[2], "grossMarginMax"),
+  };
+}
+
+// The margin applied to a specific PACKAGE for a quote. No-panels orders price
+// at that package's max anchor (ceiling), mirroring the frontend.
+function packageMarginForCapacity(systemKwp, panelCount, adminParams, pkg) {
+  const ap = adminParams || {};
+  const { q1, q2, q3 } = resolvePackageMarginAnchors(ap, pkg);
+  if (!(panelCount > 0)) {
+    return Number.isFinite(q3)
+      ? q3
+      : ap.grossMarginMax ?? ap.grossMargin ?? 0;
+  }
+  return grossMarginCurveFromAnchors(
+    systemKwp,
+    ap.grossMarginMinKwp,
+    ap.grossMarginMidKwp,
+    ap.grossMarginMaxKwp,
+    q1,
+    q2,
+    q3,
+    ap.grossMargin,
+  );
+}
+
+// v3-142 — resolves all three package-level margin CURVES for a given system
+// size. Each package rides its own curve; no-panels orders use each package's
+// max anchor. Absent package anchors fall back to the legacy curve.
+function resolvePackageMargins(adminParams, systemKwp, panelCount) {
+  return {
+    solar: packageMarginForCapacity(systemKwp, panelCount, adminParams, "solar"),
+    battery: packageMarginForCapacity(systemKwp, panelCount, adminParams, "battery"),
+    misc: packageMarginForCapacity(systemKwp, panelCount, adminParams, "misc"),
+  };
+}
+
 // Port of the frontend's deriveDirectPrices() (calculations.js). Rewrites every
 // derived price field from its COGS source, in place, at the reference margin.
 function deriveDirectPrices(
@@ -352,12 +483,17 @@ async function loadRuntimeDataFromSupabase() {
 
   // Re-derive every price from COGS at the reference margin, exactly like the
   // frontend does on boot — so the quote engine can never read a stale price.
+  // Per-package quote pricing re-derives at the package curve later; this only
+  // seeds the admin-display baseline.
+  const baseMargin = Number.isFinite(adminParams.grossMarginReference)
+    ? adminParams.grossMarginReference
+    : adminParams.grossMarginMax;
   deriveDirectPrices(
     adminParams,
     panelSettings,
     invertersSP,
     invertersTP,
-    adminParams.grossMarginReference,
+    baseMargin,
   );
 
   // Location shim (frontend v3-116): the four cebu/siargao scalar fees became a
@@ -390,10 +526,12 @@ async function loadRuntimeDataFromSupabase() {
 
   const invertersSinglePhase = invertersSP.map((i) => ({
     ratedKw: Number(i.ratedKw),
+    cogs: Number(i.cogs),
     directPrice: Number(i.directPrice),
   }));
   const invertersThreePhase = invertersTP.map((i) => ({
     ratedKw: Number(i.ratedKw),
+    cogs: Number(i.cogs),
     directPrice: Number(i.directPrice),
   }));
   if (!invertersSinglePhase.length || !invertersThreePhase.length) {
@@ -419,11 +557,13 @@ async function loadRuntimeDataFromSupabase() {
     panelSettings: {
       singlePhase: {
         panelWatts: Number(panelSingle.panelWatts),
+        panelCogs: Number(panelSingle.panelCogs),
         panelDirectPrice: Number(panelSingle.panelDirectPrice),
         maxDcAcRatio: Number(panelSingle.maxDcAcRatio),
       },
       threePhase: {
         panelWatts: Number(panelThree.panelWatts),
+        panelCogs: Number(panelThree.panelCogs),
         panelDirectPrice: Number(panelThree.panelDirectPrice),
         maxDcAcRatio: Number(panelThree.maxDcAcRatio),
       },
@@ -674,7 +814,13 @@ function buildPackageLineItems(state, adminParams, runtime) {
       ? runtime.panelSettings.threePhase.panelWatts
       : runtime.panelSettings.singlePhase.panelWatts;
   const systemKwp = (panelCount * panelWatts) / 1000;
-  const panelPriceEa = panelDirectPrice(phase, runtime);
+  const { solar: solarMargin, battery: batteryMargin, misc: miscMargin } =
+    resolvePackageMargins(adminParams, systemKwp, panelCount);
+  const panelCogsEa =
+    phase === "three"
+      ? runtime.panelSettings.threePhase.panelCogs
+      : runtime.panelSettings.singlePhase.panelCogs;
+  const panelPriceEa = directFromCogs(panelCogsEa, adminParams, solarMargin);
 
   const items = [];
   const panelsTotal = panelCount * panelPriceEa;
@@ -788,7 +934,9 @@ function buildPackageLineItems(state, adminParams, runtime) {
   });
 
   selectedInverters.forEach((inv, i) => {
-    const invDirect = inv ? inv.directPrice : 0;
+    const invDirect = inv
+      ? directFromCogs(inv.cogs, adminParams, solarMargin)
+      : 0;
     const desc = inv ? `${Number(inv.ratedKw).toFixed(2)} kW Inverter` : "None";
     items.push({
       key: `inverter${i}`,
@@ -805,16 +953,43 @@ function buildPackageLineItems(state, adminParams, runtime) {
       : 0;
   const rackCount =
     batteryCount > 0 ? Math.ceil(batteryCount / pkg.batteryRackCapacity) : 0;
-  const batteryDirect = batteryCount * pkg.batteryUnitPrice;
-  const rackDirect = rackCount * pkg.batteryRackPrice;
-  const atsDirect = batteryKwh > 0 ? pkg.atsPrice : 0;
-  const critLoadDirect = batteryKwh > 0 ? pkg.criticalLoadsMaterials : 0;
+  const batteryUnitPrice = directFromCogs(
+    pkg.batteryUnitCogs,
+    adminParams,
+    batteryMargin,
+  );
+  const batteryRackPrice = directFromCogs(
+    pkg.batteryRackCogs,
+    adminParams,
+    batteryMargin,
+  );
+  const atsPrice = directFromCogs(pkg.atsCogs, adminParams, batteryMargin);
+  const critLoadsPrice = directFromCogs(
+    pkg.criticalLoadsMaterialsCogs,
+    adminParams,
+    batteryMargin,
+  );
+  const batteryLaborWithSolarPrice = directFromCogs(
+    pkg.laborWithSolarInstallCogs,
+    adminParams,
+    batteryMargin,
+  );
+  const batteryStandaloneLaborPrice = directFromCogs(
+    pkg.standaloneLaborCogs,
+    adminParams,
+    batteryMargin,
+  );
+
+  const batteryDirect = batteryCount * batteryUnitPrice;
+  const rackDirect = rackCount * batteryRackPrice;
+  const atsDirect = batteryKwh > 0 ? atsPrice : 0;
+  const critLoadDirect = batteryKwh > 0 ? critLoadsPrice : 0;
   const hasSolar = panelsTotal > 0;
   const battLaborDirect =
     batteryKwh > 0
       ? hasSolar
-        ? pkg.laborWithSolarInstall
-        : pkg.standaloneLabor
+        ? batteryLaborWithSolarPrice
+        : batteryStandaloneLaborPrice
       : 0;
   const battLaborLabel = hasSolar
     ? "Battery Labor & Installation w/ Solar Package Installation"
@@ -909,7 +1084,7 @@ function buildPackageLineItems(state, adminParams, runtime) {
   });
 
   (miscMaterials || []).forEach((row, i) => {
-    if (!row.description || !row.count || !row.unitPrice) {
+    if (!row || !row.count) {
       items.push({
         key: `misc${i}`,
         description: "",
@@ -918,6 +1093,42 @@ function buildPackageLineItems(state, adminParams, runtime) {
       });
       return;
     }
+
+    const catId = row.catalogId;
+    const isCatalog = catId && catId !== "other";
+    if (isCatalog) {
+      const item = (adminParams.miscCatalog || []).find(
+        (m) => m && m.id === catId,
+      );
+      if (!item || item.available === false) {
+        items.push({
+          key: `misc${i}`,
+          description: "",
+          directPrice: 0,
+          rto60Price: 0,
+        });
+        return;
+      }
+      const dir = row.count * directFromCogs(item.cogs, adminParams, miscMargin);
+      items.push({
+        key: `misc${i}`,
+        description: `${row.count} Unit/s ${item.label}`,
+        directPrice: dir,
+        rto60Price: toRto(dir),
+      });
+      return;
+    }
+
+    if (!row.description || !row.unitPrice) {
+      items.push({
+        key: `misc${i}`,
+        description: "",
+        directPrice: 0,
+        rto60Price: 0,
+      });
+      return;
+    }
+
     const dir = row.count * row.unitPrice;
     items.push({
       key: `misc${i}`,

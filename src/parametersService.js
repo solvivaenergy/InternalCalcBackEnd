@@ -59,6 +59,15 @@ const PARAM_KEY_TO_SECTION = {
   grossMarginMin: "margins",
   grossMarginMid: "margins",
   grossMarginMax: "margins",
+  grossMarginSolarMin: "margins",
+  grossMarginSolarMid: "margins",
+  grossMarginSolarMax: "margins",
+  grossMarginBatteryMin: "margins",
+  grossMarginBatteryMid: "margins",
+  grossMarginBatteryMax: "margins",
+  grossMarginMiscMin: "margins",
+  grossMarginMiscMid: "margins",
+  grossMarginMiscMax: "margins",
   grossMarginReference: "margins",
   merchantDiscountRate: "margins",
   // Interest Rates
@@ -514,6 +523,84 @@ export async function putParameters(body, accessToken, claimedRole) {
         payload: {
           error:
             "Refusing to save: defaultMonthlyBill must be a number greater than 0 (₱).",
+        },
+      };
+    }
+  }
+
+  const ap = merged.adminParams || {};
+
+  // v3-142 — per-package gross-margin CURVE anchors. Each package's three
+  // anchors (Min/Med/Max) must be strictly increasing fractions in [0, 1).
+  // A package with all three anchors absent falls back to the legacy curve.
+  const packageAnchorSets = [
+    ["A. Solar", ["grossMarginSolarMin", "grossMarginSolarMid", "grossMarginSolarMax"]],
+    ["B. Battery", ["grossMarginBatteryMin", "grossMarginBatteryMid", "grossMarginBatteryMax"]],
+    ["C. Misc", ["grossMarginMiscMin", "grossMarginMiscMid", "grossMarginMiscMax"]],
+  ];
+  for (const [label, keys] of packageAnchorSets) {
+    const present = keys.some((k) => k in ap);
+    if (!present) continue;
+    const [vMin, vMid, vMax] = keys.map((k) => ap[k]);
+    const finiteFraction = (v) =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1;
+    if (
+      ![vMin, vMid, vMax].every(finiteFraction) ||
+      !(vMin < vMid && vMid < vMax)
+    ) {
+      return {
+        status: 400,
+        payload: {
+          error: `Refusing to save: ${label} package margins must be strictly increasing fractions in [0, 1): Min < Med < Max.`,
+        },
+      };
+    }
+  }
+
+  // Shared capacity breakpoints (kWp) — validate when present.
+  const kwpKeys = ["grossMarginMinKwp", "grossMarginMidKwp", "grossMarginMaxKwp"];
+  if (kwpKeys.some((k) => k in ap)) {
+    const [x1, x2, x3] = kwpKeys.map((k) => ap[k]);
+    if (
+      ![x1, x2, x3].every((v) => typeof v === "number" && Number.isFinite(v) && v > 0) ||
+      !(x1 < x2 && x2 < x3)
+    ) {
+      return {
+        status: 400,
+        payload: {
+          error:
+            "Refusing to save: gross-margin capacity breakpoints (kWp) must be positive and strictly increasing: MinKwp < MidKwp < MaxKwp.",
+        },
+      };
+    }
+  }
+
+  if ("grossMarginReference" in ap) {
+    const v = ap.grossMarginReference;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v >= 1) {
+      return {
+        status: 400,
+        payload: {
+          error:
+            "Refusing to save: grossMarginReference must be a fraction between 0 and 1 (exclusive of 1).",
+        },
+      };
+    }
+  }
+
+  if ("merchantDiscountRate" in ap) {
+    const mdr = ap.merchantDiscountRate;
+    const mdrCeiling = 1 - 0.12 / 1.12;
+    if (
+      typeof mdr !== "number" ||
+      !Number.isFinite(mdr) ||
+      mdr < 0 ||
+      mdr >= mdrCeiling
+    ) {
+      return {
+        status: 400,
+        payload: {
+          error: `Refusing to save: merchantDiscountRate must be between 0 and ${mdrCeiling} (exclusive upper bound).`,
         },
       };
     }
