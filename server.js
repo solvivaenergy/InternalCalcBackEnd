@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import { buildQuote } from "./src/quoteService.js";
 import { getParameters, putParameters } from "./src/parametersService.js";
