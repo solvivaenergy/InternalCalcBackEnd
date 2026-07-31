@@ -534,9 +534,22 @@ export async function putParameters(body, accessToken, claimedRole) {
   // anchors (Min/Med/Max) must be strictly increasing fractions in [0, 1).
   // A package with all three anchors absent falls back to the legacy curve.
   const packageAnchorSets = [
-    ["A. Solar", ["grossMarginSolarMin", "grossMarginSolarMid", "grossMarginSolarMax"]],
-    ["B. Battery", ["grossMarginBatteryMin", "grossMarginBatteryMid", "grossMarginBatteryMax"]],
-    ["C. Misc", ["grossMarginMiscMin", "grossMarginMiscMid", "grossMarginMiscMax"]],
+    [
+      "A. Solar",
+      ["grossMarginSolarMin", "grossMarginSolarMid", "grossMarginSolarMax"],
+    ],
+    [
+      "B. Battery",
+      [
+        "grossMarginBatteryMin",
+        "grossMarginBatteryMid",
+        "grossMarginBatteryMax",
+      ],
+    ],
+    [
+      "C. Misc",
+      ["grossMarginMiscMin", "grossMarginMiscMid", "grossMarginMiscMax"],
+    ],
   ];
   for (const [label, keys] of packageAnchorSets) {
     const present = keys.some((k) => k in ap);
@@ -558,11 +571,17 @@ export async function putParameters(body, accessToken, claimedRole) {
   }
 
   // Shared capacity breakpoints (kWp) — validate when present.
-  const kwpKeys = ["grossMarginMinKwp", "grossMarginMidKwp", "grossMarginMaxKwp"];
+  const kwpKeys = [
+    "grossMarginMinKwp",
+    "grossMarginMidKwp",
+    "grossMarginMaxKwp",
+  ];
   if (kwpKeys.some((k) => k in ap)) {
     const [x1, x2, x3] = kwpKeys.map((k) => ap[k]);
     if (
-      ![x1, x2, x3].every((v) => typeof v === "number" && Number.isFinite(v) && v > 0) ||
+      ![x1, x2, x3].every(
+        (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
+      ) ||
       !(x1 < x2 && x2 < x3)
     ) {
       return {

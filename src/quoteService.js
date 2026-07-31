@@ -287,18 +287,23 @@ const Z75 = normSInv(0.75); // 0.6744897…
 // Port of the frontend's grossMarginCurveFromAnchors() (calculations.js). The
 // GENLINV curve over kWp for an explicit anchor triple through the shared kWp
 // breakpoints. Returns q3/fallback for a degenerate axis rather than throwing.
-function grossMarginCurveFromAnchors(systemKwp, x1, x2, x3, q1, q2, q3, fallback) {
+function grossMarginCurveFromAnchors(
+  systemKwp,
+  x1,
+  x2,
+  x3,
+  q1,
+  q2,
+  q3,
+  fallback,
+) {
   if (
     ![x1, x2, x3, q1, q2, q3].every(Number.isFinite) ||
     x3 <= x1 ||
     x2 <= x1 ||
     x2 >= x3
   ) {
-    return Number.isFinite(q3)
-      ? q3
-      : Number.isFinite(fallback)
-        ? fallback
-        : 0;
+    return Number.isFinite(q3) ? q3 : Number.isFinite(fallback) ? fallback : 0;
   }
   const kwp = Number.isFinite(systemKwp) ? systemKwp : x3;
   const x = Math.min(x3, Math.max(x1, kwp));
@@ -344,7 +349,7 @@ function packageMarginForCapacity(systemKwp, panelCount, adminParams, pkg) {
   if (!(panelCount > 0)) {
     return Number.isFinite(q3)
       ? q3
-      : ap.grossMarginMax ?? ap.grossMargin ?? 0;
+      : (ap.grossMarginMax ?? ap.grossMargin ?? 0);
   }
   return grossMarginCurveFromAnchors(
     systemKwp,
@@ -363,8 +368,18 @@ function packageMarginForCapacity(systemKwp, panelCount, adminParams, pkg) {
 // max anchor. Absent package anchors fall back to the legacy curve.
 function resolvePackageMargins(adminParams, systemKwp, panelCount) {
   return {
-    solar: packageMarginForCapacity(systemKwp, panelCount, adminParams, "solar"),
-    battery: packageMarginForCapacity(systemKwp, panelCount, adminParams, "battery"),
+    solar: packageMarginForCapacity(
+      systemKwp,
+      panelCount,
+      adminParams,
+      "solar",
+    ),
+    battery: packageMarginForCapacity(
+      systemKwp,
+      panelCount,
+      adminParams,
+      "battery",
+    ),
     misc: packageMarginForCapacity(systemKwp, panelCount, adminParams, "misc"),
   };
 }
@@ -814,8 +829,11 @@ function buildPackageLineItems(state, adminParams, runtime) {
       ? runtime.panelSettings.threePhase.panelWatts
       : runtime.panelSettings.singlePhase.panelWatts;
   const systemKwp = (panelCount * panelWatts) / 1000;
-  const { solar: solarMargin, battery: batteryMargin, misc: miscMargin } =
-    resolvePackageMargins(adminParams, systemKwp, panelCount);
+  const {
+    solar: solarMargin,
+    battery: batteryMargin,
+    misc: miscMargin,
+  } = resolvePackageMargins(adminParams, systemKwp, panelCount);
   const panelCogsEa =
     phase === "three"
       ? runtime.panelSettings.threePhase.panelCogs
@@ -1109,7 +1127,8 @@ function buildPackageLineItems(state, adminParams, runtime) {
         });
         return;
       }
-      const dir = row.count * directFromCogs(item.cogs, adminParams, miscMargin);
+      const dir =
+        row.count * directFromCogs(item.cogs, adminParams, miscMargin);
       items.push({
         key: `misc${i}`,
         description: `${row.count} Unit/s ${item.label}`,
