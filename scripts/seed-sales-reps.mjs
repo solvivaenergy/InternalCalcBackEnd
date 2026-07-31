@@ -33,39 +33,167 @@ const supabase = createClient(url, serviceKey, {
 // ── Roster ──────────────────────────────────────────────────────────────────
 // name → display_name (user_metadata + agent auto-fill)
 // mobile → PH mobile (user_metadata.mobile), normalized to 09XXXXXXXXX.
-// Regine Tiongson intentionally omitted (duplicate email pending correction).
 const REPS = [
-  { name: "Patrick Avedillo",      email: "patrick.avedillo@solvivaenergy.com",   mobile: "09171486078" },
-  { name: "Leonard Hutalla",       email: "leonard@solvivaenergy.com",            mobile: "09178221374" },
-  { name: "Kristal Atanacio",      email: "kristal@solvivaenergy.com",            mobile: "09171244812" },
-  { name: "Arniel Banez",          email: "arniel.banez@solvivaenergy.com",       mobile: "09171069841" },
-  { name: "Rowena Garcia",         email: "rowena@solvivaenergy.com",             mobile: "09175123674" },
-  { name: "Derrick Elacio",        email: "derrick@solvivaenergy.com",            mobile: "09171626772" },
-  { name: "Christine Domingo",     email: "christine.domingo@solvivaenergy.com",  mobile: "09171383114" },
-  { name: "Halzina Abella",        email: "halzinashein.abella@aboitizpower.com", mobile: "09763424306" },
-  { name: "Marco Castro",          email: "marco.castro@aboitizpower.com",        mobile: "09164350077" },
-  { name: "Jeny Ann Dotarot",      email: "jeny.dotarot@solvivaenergy.com",       mobile: "09171648870" },
-  { name: "Samuel Daroya",         email: "samuel.daroya@solvivaenergy.com",      mobile: "09764048458" },
-  { name: "Abelyn Seno",           email: "abelyn.seno@solvivaenergy.com",        mobile: "09171684038" },
-  { name: "Arianne Kate Olazo",    email: "arianne.olazo@solvivaenergy.com",      mobile: "" },
-  { name: "Jane Romyer Ann Castro",email: "jane.castro@solvivaenergy.com",        mobile: "09452719828" },
-  { name: "Katrina Medina",        email: "katrina.medina@solvivaenergy.com",     mobile: "09624861880" },
-  { name: "Camille Bueno",         email: "camille.bueno@solvivaenergy.com",      mobile: "09763935085" },
-  { name: "Vanessa Joy Apostol",   email: "vanessa.apostol@solvivaenergy.com",    mobile: "09466856458" },
-  { name: "Ed Paulo Ramos",        email: "edpaulo.ramos@solvivaenergy.com",      mobile: "09756605457" },
-  { name: "Carey Chua",            email: "carey.chua@solvivaenergy.com",         mobile: "09171889477" },
-  { name: "Danica Guerrero",       email: "danica.guerrero@solvivaenergy.com",    mobile: "09937366291" },
-  { name: "John Paolo Jorvina",    email: "john.jorvina@solvivaenergy.com",       mobile: "09933297345" },
-  { name: "Marjorie Oma",          email: "marjorie.oma@solvivaenergy.com",       mobile: "09060953071" },
-  { name: "Dreks Fernandez",       email: "dreks.fernandez@solvivaenergy.com",    mobile: "09171178911" },
-  { name: "Reggie Pilante",        email: "reggie.pilante@solvivaenergy.com",     mobile: "09171430025" },
-  { name: "Jennifer Corpuz",       email: "jennifer.corpuz@solvivaenergy.com",    mobile: "09369546839" },
-  { name: "Janno Fransisco",       email: "janno.francisco@solvivaenergy.com",    mobile: "09360556692" },
-  { name: "Mark Herero",           email: "mark.herero@solvivaenergy.com",        mobile: "09762164096" },
-  { name: "Genyrose Zaspa",        email: "genyrose.zaspa@solvivaenergy.com",     mobile: "09171701752" },
-  { name: "George Lufrangco",      email: "george.lufrangco@solvivaenergy.com",   mobile: "09171122987" },
-  { name: "Raymond Nicolas",       email: "raymond.nicolas@solvivaenergy.com",    mobile: "09171900727" },
-  { name: "Leoniza Anub",          email: "leoniza.anub@solvivaenergy.com",       mobile: "09171269479" },
+  {
+    name: "Patrick Avedillo",
+    email: "patrick.avedillo@solvivaenergy.com",
+    mobile: "09171486078",
+  },
+  {
+    name: "Leonard Hutalla",
+    email: "leonard@solvivaenergy.com",
+    mobile: "09178221374",
+  },
+  {
+    name: "Kristal Atanacio",
+    email: "kristal@solvivaenergy.com",
+    mobile: "09171244812",
+  },
+  {
+    name: "Arniel Banez",
+    email: "arneil.banez@solvivaenergy.com",
+    mobile: "09171069841",
+  },
+  {
+    name: "Rowena Garcia",
+    email: "rowena@solvivaenergy.com",
+    mobile: "09175123674",
+  },
+  {
+    name: "Derrick Elacio",
+    email: "derrick@solvivaenergy.com",
+    mobile: "09171626772",
+  },
+  {
+    name: "Christine Domingo",
+    email: "christine.domingo@solvivaenergy.com",
+    mobile: "09171383114",
+  },
+  {
+    name: "Halzina Abella",
+    email: "halzina.abella@solvivaenergy.com",
+    mobile: "09763424306",
+  },
+  {
+    name: "Marco Castro",
+    email: "marco.castro@solvivaenergy.com",
+    mobile: "09164350077",
+  },
+  {
+    name: "Jeny Ann Dotarot",
+    email: "jeny.dotarot@solvivaenergy.com",
+    mobile: "09171648870",
+  },
+  {
+    name: "Samuel Daroya",
+    email: "samuel.daroya@solvivaenergy.com",
+    mobile: "09764048458",
+  },
+  {
+    name: "Abelyn Seno",
+    email: "abelyn.seno@solvivaenergy.com",
+    mobile: "09171684038",
+  },
+  {
+    name: "Arianne Kate Olazo",
+    email: "arianne.olazo@solvivaenergy.com",
+    mobile: "",
+  },
+  {
+    name: "Jane Romyer Ann Castro",
+    email: "jane.castro@solvivaenergy.com",
+    mobile: "09452719828",
+  },
+  {
+    name: "Katrina Medina",
+    email: "katrina.medina@solvivaenergy.com",
+    mobile: "09624861880",
+  },
+  {
+    name: "Camille Bueno",
+    email: "camille.bueno@solvivaenergy.com",
+    mobile: "09763935085",
+  },
+  {
+    name: "Vanessa Joy Apostol",
+    email: "vanessa.apostol@solvivaenergy.com",
+    mobile: "09466856458",
+  },
+  {
+    name: "Ed Paulo Ramos",
+    email: "edpaulo.ramos@solvivaenergy.com",
+    mobile: "09756605457",
+  },
+  {
+    name: "Carey Chua",
+    email: "carey.chua@solvivaenergy.com",
+    mobile: "09171889477",
+  },
+  {
+    name: "Danica Guerrero",
+    email: "danica.guerrero@solvivaenergy.com",
+    mobile: "09937366291",
+  },
+  {
+    name: "John Paolo Jorvina",
+    email: "john.jorvina@solvivaenergy.com",
+    mobile: "09933297345",
+  },
+  {
+    name: "Marjorie Oma",
+    email: "marjorie.oma@solvivaenergy.com",
+    mobile: "09060953071",
+  },
+  {
+    name: "Dreks Fernandez",
+    email: "dreks.fernandez@solvivaenergy.com",
+    mobile: "09171178911",
+  },
+  {
+    name: "Reggie Pilante",
+    email: "reggie.pilante@solvivaenergy.com",
+    mobile: "09171430025",
+  },
+  {
+    name: "Jennifer Corpuz",
+    email: "jennifer.corpuz@solvivaenergy.com",
+    mobile: "09369546839",
+  },
+  {
+    name: "Janno Fransisco",
+    email: "janno.francisco@solvivaenergy.com",
+    mobile: "09360556692",
+  },
+  {
+    name: "Mark Herero",
+    email: "mark.herero@solvivaenergy.com",
+    mobile: "09762164096",
+  },
+  {
+    name: "Genyrose Zaspa",
+    email: "genyrose.zaspa@solvivaenergy.com",
+    mobile: "09171701752",
+  },
+  {
+    name: "George Lufrangco",
+    email: "george.lufrangco@solvivaenergy.com",
+    mobile: "09171122987",
+  },
+  {
+    name: "Raymond Nicolas",
+    email: "raymond.nicolas@solvivaenergy.com",
+    mobile: "09171900727",
+  },
+  {
+    name: "Leoniza Anub",
+    email: "leoniza@solvivaenergy.com",
+    mobile: "09171269479",
+  },
+  {
+    name: "Regine Tiongson",
+    email: "regine.tiongson@solvivaenergy.com",
+    mobile: "09171506706",
+  },
 ];
 
 // Effective role read by the frontend (fetchUserRole → app_metadata.role ||
@@ -152,12 +280,14 @@ async function upsertRep({ name, email, mobile }) {
     if (error) throw error;
   }
 
-  const { error: roleError } = await supabase
-    .from("user_roles")
-    .upsert(
-      { user_id: user.id, role: TABLE_ROLE, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" },
-    );
+  const { error: roleError } = await supabase.from("user_roles").upsert(
+    {
+      user_id: user.id,
+      role: TABLE_ROLE,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
   if (roleError) throw roleError;
 
   return { email, name, status, password };
@@ -172,7 +302,12 @@ async function upsertRep({ name, email, mobile }) {
       results.push(r);
       console.log(`  ${r.status.padEnd(28)} ${r.email}`);
     } catch (err) {
-      results.push({ email: rep.email, name: rep.name, status: "FAILED", error: err.message || String(err) });
+      results.push({
+        email: rep.email,
+        name: rep.name,
+        status: "FAILED",
+        error: err.message || String(err),
+      });
       console.error(`  FAILED  ${rep.email}: ${err.message || err}`);
       process.exitCode = 1;
     }

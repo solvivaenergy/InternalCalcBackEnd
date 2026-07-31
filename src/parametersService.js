@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const TABLE = "app_parameters";
 
-const EDIT_ROLES = new Set(["edit", "engineering", "product"]);
+const EDIT_ROLES = new Set(["edit", "engineering", "product", "inventory"]);
 
 // Maps a role stored in public.user_roles (app_role enum) to the internal
 // admin edit-role vocabulary this service enforces. Only these DB roles may
@@ -12,6 +12,7 @@ const DB_ROLE_TO_EDIT_ROLE = {
   admin: "edit",
   engineering: "engineering",
   product: "product",
+  inventory: "inventory",
 };
 
 const ROLE_ADMIN_SECTIONS = {
@@ -37,10 +38,13 @@ const ROLE_ADMIN_SECTIONS = {
     "promoCodes",
     "maintenance",
   ]),
+  // Inventory-only editor — Inventory tab sections only.
+  inventory: new Set(["solarPanel", "cabling", "batteryPackage"]),
 };
 
 const ROLE_INVENTORY_ACCESS = {
   engineering: true,
+  inventory: true,
   product: false,
 };
 
