@@ -310,8 +310,16 @@ function grossMarginCurveFromAnchors(
   const kN = Math.log(0.5) / Math.log((x2 - x1) / (x3 - x1));
   const u = Math.pow((x - x1) / (x3 - x1), kN);
   const p = 0.25 + 0.5 * u;
-  const b = (q3 - q2) / (q2 - q1);
   const z = normSInv(p) / Z75;
+  const dLow = q2 - q1;
+  const dHigh = q3 - q2;
+  // Degenerate margin anchors (flat, e.g. 32/32/32, or a single equal side)
+  // make the GENLINV b-ratio 0/0 → NaN. Fall back to a plain piecewise-linear
+  // blend so a flat triple returns q2 and a half-flat triple stays monotone.
+  if (!(dLow > 0) || !(dHigh > 0)) {
+    return q2 + (z >= 0 ? dHigh : dLow) * z;
+  }
+  const b = dHigh / dLow;
   return Math.abs(b - 1) < 1e-9
     ? q2 + (q3 - q2) * z
     : q2 + ((q3 - q2) * (Math.pow(b, z) - 1)) / (b - 1);

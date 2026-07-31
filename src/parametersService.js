@@ -531,8 +531,10 @@ export async function putParameters(body, accessToken, claimedRole) {
   const ap = merged.adminParams || {};
 
   // v3-142 — per-package gross-margin CURVE anchors. Each package's three
-  // anchors (Min/Med/Max) must be strictly increasing fractions in [0, 1).
-  // A package with all three anchors absent falls back to the legacy curve.
+  // anchors (Min/Med/Max) must be non-decreasing fractions in [0, 1). Equal
+  // anchors are allowed (a flat margin, e.g. battery 32/32/32) — the curve
+  // degrades to a constant. A package with all three anchors absent falls back
+  // to the legacy curve.
   const packageAnchorSets = [
     [
       "A. Solar",
@@ -559,12 +561,12 @@ export async function putParameters(body, accessToken, claimedRole) {
       typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1;
     if (
       ![vMin, vMid, vMax].every(finiteFraction) ||
-      !(vMin < vMid && vMid < vMax)
+      !(vMin <= vMid && vMid <= vMax)
     ) {
       return {
         status: 400,
         payload: {
-          error: `Refusing to save: ${label} package margins must be strictly increasing fractions in [0, 1): Min < Med < Max.`,
+          error: `Refusing to save: ${label} package margins must be non-decreasing fractions in [0, 1): Min ≤ Med ≤ Max.`,
         },
       };
     }
