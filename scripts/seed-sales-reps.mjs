@@ -194,6 +194,11 @@ const REPS = [
     email: "regine.tiongson@solvivaenergy.com",
     mobile: "09171506706",
   },
+  {
+    name: "Eduardo Garrovillas",
+    email: "eduardo.garrovillas@solvivaenergy.com",
+    mobile: "",
+  },
 ];
 
 // Effective role read by the frontend (fetchUserRole → app_metadata.role ||

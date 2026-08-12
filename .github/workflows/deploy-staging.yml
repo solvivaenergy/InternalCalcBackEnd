@@ -1,0 +1,29 @@
+name: Deploy Backend to Render (Staging)
+
+# Staging pipeline: pushes to the `staging` branch trigger a redeploy of the
+# separate staging Render service. If Render is already set to auto-deploy
+# from the `staging` branch, the deploy hook is optional and this workflow
+# simply no-ops when the secret is absent.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Render staging deployment
+        env:
+          RENDER_STAGING_DEPLOY_HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_STAGING_DEPLOY_HOOK" ]; then
+            echo "RENDER_STAGING_DEPLOY_HOOK not set. Relying on Render branch auto-deploy."
+            exit 0
+          fi
+          curl -X POST "$RENDER_STAGING_DEPLOY_HOOK"
+          echo "Staging deployment triggered"
