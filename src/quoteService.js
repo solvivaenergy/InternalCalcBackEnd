@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const INCLUDED_DC_CABLE_METERS = 30;
 const INCLUDED_AC_CABLE_METERS = 10;
+const LUZON_FREE_TRAVEL_KM = 33;
 const FALLBACK_DAY_START_HOUR = 6;
 
 const FALLBACK_CABLING_TIER = {
@@ -159,6 +160,11 @@ function sanitizeState(input, adminParams, runtime) {
     batteryPackageId: input.batteryPackageId
       ? String(input.batteryPackageId)
       : undefined,
+    // v3-143 — battery component unbundling. Default true = include (prior
+    // behavior). Only gate line-item emission; sizing untouched.
+    batteryIncludeRack: input.batteryIncludeRack !== false,
+    batteryIncludeAts: input.batteryIncludeAts !== false,
+    batteryIncludeCriticalLoads: input.batteryIncludeCriticalLoads !== false,
     roofMaterial: ["metal", "asphalt", "concrete"].includes(input.roofMaterial)
       ? input.roofMaterial
       : "metal",
@@ -821,6 +827,9 @@ function buildPackageLineItems(state, adminParams, runtime) {
     rsdStandalonePanelCount,
     selectedInverters,
     batteryKwh,
+    batteryIncludeRack = true,
+    batteryIncludeAts = true,
+    batteryIncludeCriticalLoads = true,
     roofMaterial,
     location,
     locationKm,
@@ -1007,9 +1016,10 @@ function buildPackageLineItems(state, adminParams, runtime) {
   );
 
   const batteryDirect = batteryCount * batteryUnitPrice;
-  const rackDirect = rackCount * batteryRackPrice;
-  const atsDirect = batteryKwh > 0 ? atsPrice : 0;
-  const critLoadDirect = batteryKwh > 0 ? critLoadsPrice : 0;
+  const rackDirect = batteryIncludeRack ? rackCount * batteryRackPrice : 0;
+  const atsDirect = batteryKwh > 0 && batteryIncludeAts ? atsPrice : 0;
+  const critLoadDirect =
+    batteryKwh > 0 && batteryIncludeCriticalLoads ? critLoadsPrice : 0;
   const hasSolar = panelsTotal > 0;
   const battLaborDirect =
     batteryKwh > 0
@@ -1027,24 +1037,57 @@ function buildPackageLineItems(state, adminParams, runtime) {
     directPrice: batteryDirect,
     rto60Price: toRto(batteryDirect),
   });
-  items.push({
-    key: "rack",
-    description: `${rackCount} unit/s Battery Rack`,
-    directPrice: rackDirect,
-    rto60Price: toRto(rackDirect),
-  });
-  items.push({
-    key: "ats",
-    description: "Automatic Transfer Switch (ATS)",
-    directPrice: atsDirect,
-    rto60Price: toRto(atsDirect),
-  });
-  items.push({
-    key: "critLoads",
-    description: "Materials for Critical Loads",
-    directPrice: critLoadDirect,
-    rto60Price: toRto(critLoadDirect),
-  });
+  // v3-143 — unbundled component (client-supplied): emit ₱0 informational line.
+  if (batteryKwh > 0 && !batteryIncludeRack) {
+    items.push({
+      key: "rack",
+      description: "Battery Rack — not included (client-supplied)",
+      directPrice: 0,
+      rto60Price: 0,
+      informational: true,
+    });
+  } else {
+    items.push({
+      key: "rack",
+      description: `${rackCount} unit/s Battery Rack`,
+      directPrice: rackDirect,
+      rto60Price: toRto(rackDirect),
+    });
+  }
+  if (batteryKwh > 0 && !batteryIncludeAts) {
+    items.push({
+      key: "ats",
+      description:
+        "Automatic Transfer Switch (ATS) — not included (client-supplied)",
+      directPrice: 0,
+      rto60Price: 0,
+      informational: true,
+    });
+  } else {
+    items.push({
+      key: "ats",
+      description: "Automatic Transfer Switch (ATS)",
+      directPrice: atsDirect,
+      rto60Price: toRto(atsDirect),
+    });
+  }
+  if (batteryKwh > 0 && !batteryIncludeCriticalLoads) {
+    items.push({
+      key: "critLoads",
+      description:
+        "Materials for Critical Loads — not included (client-supplied)",
+      directPrice: 0,
+      rto60Price: 0,
+      informational: true,
+    });
+  } else {
+    items.push({
+      key: "critLoads",
+      description: "Materials for Critical Loads",
+      directPrice: critLoadDirect,
+      rto60Price: toRto(critLoadDirect),
+    });
+  }
   items.push({
     key: "batteryLabor",
     description: battLaborLabel,
@@ -1085,7 +1128,7 @@ function buildPackageLineItems(state, adminParams, runtime) {
   });
 
   let locationDirect = 0;
-  let locationLabel = "Location / Delivery - Luzon (within 30km)";
+  let locationLabel = `Location / Delivery - Luzon (within ${LUZON_FREE_TRAVEL_KM}km)`;
   if (panelsTotal > 0) {
     if (location === "cebu") {
       locationDirect =
@@ -1095,11 +1138,15 @@ function buildPackageLineItems(state, adminParams, runtime) {
       locationDirect =
         adminParams.siargaoFixedFee + panelCount * adminParams.siargaoPerPanel;
       locationLabel = "Location / Delivery - Siargao";
-    } else if (location === "luzon" && (locationKm || 0) > 30) {
+    } else if (
+      location === "luzon" &&
+      (locationKm || 0) > LUZON_FREE_TRAVEL_KM
+    ) {
       locationDirect =
         adminParams.luzonOver30FixedFee +
-        (locationKm || 0) * adminParams.luzonOver30PerKm;
-      locationLabel = `Location / Delivery - Luzon (${locationKm} km from Rizal Park)`;
+        Math.max(0, (locationKm || 0) - LUZON_FREE_TRAVEL_KM) *
+          adminParams.luzonOver30PerKm;
+      locationLabel = `Location / Delivery - Luzon (${locationKm} km from Parañaque hub)`;
     }
   }
   items.push({
