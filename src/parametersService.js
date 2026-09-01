@@ -2,7 +2,13 @@ import { createClient } from "@supabase/supabase-js";
 
 const TABLE = "app_parameters";
 
-const EDIT_ROLES = new Set(["edit", "engineering", "product", "inventory"]);
+const EDIT_ROLES = new Set([
+  "edit",
+  "engineering",
+  "product",
+  "inventory",
+  "finco",
+]);
 
 // Maps a role stored in public.user_roles (app_role enum) to the internal
 // admin edit-role vocabulary this service enforces. Only these DB roles may
@@ -13,6 +19,11 @@ const DB_ROLE_TO_EDIT_ROLE = {
   engineering: "engineering",
   product: "product",
   inventory: "inventory",
+  // v3-180 — FinCo/OpCo separation. The financing entity edits its own
+  // parameters (financing limits + interest rates + returns assumptions) and
+  // nothing else. Requires the matching value in the user_roles enum — see
+  // supabase/migrations/20260901_add_finco_role.sql.
+  finco: "finco",
 };
 
 const ROLE_ADMIN_SECTIONS = {
@@ -32,13 +43,26 @@ const ROLE_ADMIN_SECTIONS = {
   product: new Set([
     "margins",
     "quoteValidity",
+    // v3-180 — 'quoteLimits' now carries minSystemKwp only; the minimum
+    // down-payment tiers and maximum tenor moved to 'financingTerms' (FinCo).
     "quoteLimits",
     "step1Defaults",
-    "interestRates",
+    // v3-159 — Product-settable default down payment (a pre-fill, not a floor).
+    "step3Defaults",
     "promoCodes",
     "maintenance",
+    // NOTE: 'interestRates' deliberately left OFF this role — v3-180 moved the
+    // whole Interest Rates section to the FinCo role below.
   ]),
-  // Inventory-only editor — Inventory tab sections only.
+  // v3-180 — FinCo Admin: the financing entity's parameters ONLY.
+  finco: new Set([
+    "financingTerms",
+    "interestRates",
+    "returnsAssumptions",
+    "duInflationReference",
+  ]),
+  // Inventory-only editor — Inventory tab sections only. Not an upstream
+  // v3-207 role; added by this deployment (migration 20260731_add_inventory_role).
   inventory: new Set(["solarPanel", "cabling", "batteryPackage"]),
 };
 
@@ -46,6 +70,7 @@ const ROLE_INVENTORY_ACCESS = {
   engineering: true,
   inventory: true,
   product: false,
+  finco: false,
 };
 
 // Mirror of the frontend's PARAM_KEY_TO_SECTION (src/lib/permissions.js). This
@@ -72,7 +97,8 @@ const PARAM_KEY_TO_SECTION = {
   grossMarginMiscMin: "margins",
   grossMarginMiscMid: "margins",
   grossMarginMiscMax: "margins",
-  grossMarginReference: "margins",
+  // v3-190 — moved to FinCo (UI label renamed; key kept for stored payloads).
+  grossMarginReference: "returnsAssumptions",
   merchantDiscountRate: "margins",
   // Interest Rates
   rateAnchorMax: "interestRates",
@@ -123,8 +149,8 @@ const PARAM_KEY_TO_SECTION = {
   maxDailySpillKwh: "scheduleConstants",
   batteryDepthOfDischarge: "scheduleConstants",
   panelAnnualDegradation: "scheduleConstants",
-  lcoeNpvDiscountRate: "scheduleConstants",
-  maintenanceInflationRate: "scheduleConstants",
+  lcoeNpvDiscountRate: "returnsAssumptions", // v3-190 — Engineering → FinCo
+  maintenanceInflationRate: "returnsAssumptions", // v3-190 — Engineering → FinCo
   netMeteringEfficiency: "scheduleConstants",
   preventiveMaintenancePerPanelCogs: "scheduleConstants",
   preventiveMaintenancePerVisitCogs: "scheduleConstants",
@@ -133,13 +159,43 @@ const PARAM_KEY_TO_SECTION = {
   promoCodes: "promoCodes",
   // Quote Validity
   quoteValidityDays: "quoteValidity",
-  // Quote Limits (v3-68)
+  // Quote Limits (v3-68) — minSystemKwp ONLY since v3-180.
   minSystemKwp: "quoteLimits",
-  minDpTiers: "quoteLimits",
-  maxTenorMonths: "quoteLimits",
+  // Financing Limits (v3-180) — moved out of 'quoteLimits' to the FinCo role
+  // when the financing entity was separated from OpCo.
+  minDpTiers: "financingTerms",
+  maxTenorMonths: "financingTerms",
   // Step 1 Defaults (v3-70)
   defaultUtilityRate: "step1Defaults",
   defaultMonthlyBill: "step1Defaults",
+  // Step 3 Defaults (v3-159) — Product-settable default down payment.
+  defaultDownPaymentPct: "step3Defaults",
+  // Location (v3-199) — the Luzon free-delivery radius became a parameter;
+  // it was a hardcoded 30 km before.
+  luzonFreeTravelKm: "location",
+  // Margins (v3-191) — per-component margin table plus the three-phase curve
+  // anchors and the no-inverter (expansion / RSD-only / battery-only) margins.
+  componentMargins: "margins",
+  grossMarginMinTp: "margins",
+  grossMarginMidTp: "margins",
+  grossMarginMaxTp: "margins",
+  grossMarginMinKwpTp: "margins",
+  grossMarginMidKwpTp: "margins",
+  grossMarginMaxKwpTp: "margins",
+  grossMarginNoInverterSp: "margins",
+  grossMarginNoInverterTp: "margins",
+  // Returns Assumptions (v3-181 / v3-187) — FinCo-owned.
+  duRateInflationDefault: "returnsAssumptions",
+  irrYearsDefault: "returnsAssumptions",
+  // DU Inflation Reference (v3-183 / v3-190) — advisory calculator; never
+  // reaches a quote, but FinCo authors it and it travels with the PDF note.
+  duInflationBasis: "duInflationReference",
+  duInflationDate1: "duInflationReference",
+  duInflationDate2: "duInflationReference",
+  duInflationRate1: "duInflationReference",
+  duInflationRate2: "duInflationReference",
+  duInflationSourceName: "duInflationReference",
+  duInflationSourceUrl: "duInflationReference",
   // Maintenance Mode
   gateAuthEnabled: "maintenance",
 };
