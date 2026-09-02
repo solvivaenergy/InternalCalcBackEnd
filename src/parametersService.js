@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -8,6 +9,11 @@ const LOCAL_JSON_PATH = path.join(
   process.cwd(),
   "data",
   "parameters.local.json",
+);
+const LOCAL_AUDIT_PATH = path.join(
+  process.cwd(),
+  "data",
+  "parameter-audit.local.jsonl",
 );
 
 const EDIT_ROLES = new Set([
@@ -253,11 +259,12 @@ async function resolveEditRole(supabase, accessToken) {
         error: "Your account does not have permission to edit parameters.",
       };
     }
-    return { role: editRole, userId };
+    return { role: editRole, userId, email: userData.user.email || null };
   } catch (error) {
     return {
       role: "edit",
       userId,
+      email: userData.user.email || null,
       fallback: true,
     };
   }
@@ -361,6 +368,186 @@ async function writeLocalJsonPayload(payload) {
   await fs.rename(temporaryPath, LOCAL_JSON_PATH);
 }
 
+const INVENTORY_AREAS = new Set(["solarPanel", "cabling", "batteryPackage"]);
+const ENGINEERING_AREAS = new Set([
+  "variableCharges",
+  "roofMaterial",
+  "miscCatalog",
+  "location",
+  "standaloneCharges",
+  "fixedOverhead",
+  "scheduleConstants",
+  "maintenance",
+]);
+const PRODUCT_AREAS = new Set([
+  "margins",
+  "quoteValidity",
+  "quoteLimits",
+  "step1Defaults",
+  "step3Defaults",
+  "promoCodes",
+]);
+const FINCO_AREAS = new Set([
+  "financingTerms",
+  "interestRates",
+  "returnsAssumptions",
+  "duInflationReference",
+]);
+
+function areaForPath(changePath) {
+  if (
+    changePath.startsWith("panelSettings") ||
+    changePath.startsWith("invertersSinglePhase") ||
+    changePath.startsWith("invertersThreePhase") ||
+    changePath.startsWith("devices")
+  ) {
+    return "Inventory";
+  }
+  const key = changePath.startsWith("adminParams.")
+    ? changePath.slice("adminParams.".length).split(/[.[\]]/)[0]
+    : "";
+  const section = PARAM_KEY_TO_SECTION[key];
+  if (INVENTORY_AREAS.has(section)) return "Inventory";
+  if (ENGINEERING_AREAS.has(section)) return "Engineering";
+  if (PRODUCT_AREAS.has(section)) return "Product";
+  if (FINCO_AREAS.has(section)) return "FinCo";
+  return "Other";
+}
+
+function buildChanges(before, after, currentPath = "", changes = []) {
+  const beforeIsObject = before && typeof before === "object";
+  const afterIsObject = after && typeof after === "object";
+  if (
+    beforeIsObject &&
+    afterIsObject &&
+    !Array.isArray(before) &&
+    !Array.isArray(after)
+  ) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of keys) {
+      const childPath = currentPath ? `${currentPath}.${key}` : key;
+      buildChanges(before[key], after[key], childPath, changes);
+    }
+    return changes;
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const length = Math.max(before.length, after.length);
+    for (let index = 0; index < length; index += 1) {
+      buildChanges(
+        before[index],
+        after[index],
+        `${currentPath}[${index}]`,
+        changes,
+      );
+    }
+    return changes;
+  }
+  if (JSON.stringify(before) === JSON.stringify(after)) return changes;
+  const operation =
+    before === undefined ? "add" : after === undefined ? "remove" : "replace";
+  changes.push({
+    path: currentPath,
+    area: areaForPath(currentPath),
+    operation,
+    before: before === undefined ? null : before,
+    after: after === undefined ? null : after,
+  });
+  return changes;
+}
+
+function getAuditAreas(changes) {
+  return [...new Set(changes.map((change) => change.area))];
+}
+
+async function writeLocalAuditEvent(event) {
+  await fs.mkdir(path.dirname(LOCAL_AUDIT_PATH), { recursive: true });
+  await fs.appendFile(LOCAL_AUDIT_PATH, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+async function readLocalAuditEvents(limit) {
+  try {
+    const raw = await fs.readFile(LOCAL_AUDIT_PATH, "utf8");
+    return raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .reverse()
+      .slice(0, limit);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw new Error(`Local audit file could not be read: ${error.message}`);
+  }
+}
+
+async function writeAuditEvent(supabase, event) {
+  if (event.source === LOCAL_JSON_STORAGE) {
+    await writeLocalAuditEvent(event);
+    return;
+  }
+  const { error } = await supabase.from("parameter_audit_events").insert({
+    id: event.id,
+    actor_user_id: event.actorUserId,
+    actor_email: event.actorEmail,
+    actor_role: event.actorRole,
+    area: event.area,
+    source: event.source,
+    occurred_at: event.occurredAt,
+    timezone: event.timezone,
+    before_payload: event.beforePayload,
+    after_payload: event.afterPayload,
+    changes: event.changes,
+    applied_admin_keys: event.appliedAdminKeys,
+    ignored_admin_keys: event.ignoredAdminKeys,
+    inventory_applied: event.inventoryApplied,
+    request_id: event.requestId,
+    metadata: event.metadata,
+  });
+  if (error) {
+    throw new Error(`Audit event insert failed: ${error.message}`);
+  }
+}
+
+export async function getAuditEvents(
+  accessToken,
+  claimedRole,
+  requestedLimit = 100,
+) {
+  const limit = Math.min(Math.max(Number(requestedLimit) || 100, 1), 200);
+  assertLocalJsonStorage();
+  if (isLocalJsonStorage()) {
+    if (claimedRole !== "edit") {
+      return {
+        status: 403,
+        payload: { error: "Audit history is restricted to administrators." },
+      };
+    }
+    return { status: 200, payload: await readLocalAuditEvents(limit) };
+  }
+
+  const supabase = getSupabaseClient();
+  const auth = await resolveEditRole(supabase, accessToken);
+  if (auth.error) {
+    return { status: auth.status, payload: { error: auth.error } };
+  }
+  if (auth.role !== "edit") {
+    return {
+      status: 403,
+      payload: { error: "Audit history is restricted to administrators." },
+    };
+  }
+  const { data, error } = await supabase
+    .from("parameter_audit_events")
+    .select(
+      "id, actor_user_id, actor_email, actor_role, area, source, occurred_at, timezone, changes, applied_admin_keys, ignored_admin_keys, inventory_applied, request_id, metadata",
+    )
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    throw new Error(`Audit history query failed: ${error.message}`);
+  }
+  return { status: 200, payload: data || [] };
+}
+
 export async function getParameters() {
   assertLocalJsonStorage();
   if (isLocalJsonStorage()) return await readLocalJsonPayload();
@@ -368,7 +555,12 @@ export async function getParameters() {
   return await readCurrentPayload(supabase);
 }
 
-export async function putParameters(body, accessToken, claimedRole) {
+export async function putParameters(
+  body,
+  accessToken,
+  claimedRole,
+  requestId = randomUUID(),
+) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { status: 400, payload: { error: "Body must be a JSON object" } };
   }
@@ -381,7 +573,12 @@ export async function putParameters(body, accessToken, claimedRole) {
   // fallback session cannot produce a Supabase JWT, so use only its claimed
   // role after the storage mode has passed the development guard.
   const auth = localJsonStorage
-    ? { role: claimedRole || "edit", local: true }
+    ? {
+        role: claimedRole || "edit",
+        userId: "local-user",
+        email: "local-dev",
+        local: true,
+      }
     : await resolveEditRole(supabase, accessToken);
   if (auth.error) {
     return { status: auth.status, payload: { error: auth.error } };
@@ -753,6 +950,30 @@ export async function putParameters(body, accessToken, claimedRole) {
     await writeLocalJsonPayload(merged);
   } else {
     await writePayload(supabase, merged);
+  }
+  const changes = buildChanges(current, merged);
+  if (changes.length > 0) {
+    const occurredAt = new Date().toISOString();
+    const auditEvent = {
+      id: randomUUID(),
+      actorUserId: auth.userId || null,
+      actorEmail: auth.email || null,
+      actorRole: role,
+      area: getAuditAreas(changes).join(","),
+      areas: getAuditAreas(changes),
+      source: localJsonStorage ? LOCAL_JSON_STORAGE : "supabase",
+      occurredAt,
+      timezone: "Asia/Manila",
+      beforePayload: deepClone(current),
+      afterPayload: deepClone(merged),
+      changes,
+      appliedAdminKeys,
+      ignoredAdminKeys,
+      inventoryApplied,
+      requestId,
+      metadata: {},
+    };
+    await writeAuditEvent(supabase, auditEvent);
   }
   return {
     status: 200,

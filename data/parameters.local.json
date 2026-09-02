@@ -438,7 +438,106 @@
     "defaultUtilityRate": 15,
     "defaultMonthlyBill": 15000,
     "gateAuthEnabled": true,
-    "minDaysToFirstPostInstallPayment": 44
+    "minDaysToFirstPostInstallPayment": 44,
+    "grossMarginMinKwpTp": 1,
+    "grossMarginMidKwpTp": 15,
+    "grossMarginMaxKwpTp": 30,
+    "grossMarginMinTp": 0.2,
+    "grossMarginMidTp": 0.22,
+    "grossMarginMaxTp": 0.3,
+    "grossMarginNoInverterSp": 0.3,
+    "grossMarginNoInverterTp": 0.3,
+    "componentMargins": {
+      "B": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "C": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "D": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "E": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "F": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "G": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "H": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "I": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "J": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "K": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "L": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "M": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "N": {
+        "otherwise": 0.3
+      },
+      "O": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "P": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "Q": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      }
+    },
+    "luzonFreeTravelKm": 30,
+    "irrYearsDefault": 25,
+    "duRateInflationDefault": 0,
+    "duInflationSourceName": "Meralco's Rates Archives",
+    "duInflationSourceUrl": "https://company.meralco.com.ph/news-and-advisories/rates-archives",
+    "duInflationBasis": "500 kWh consumption",
+    "duInflationDate1": "2016-07",
+    "duInflationRate1": 9.8165,
+    "duInflationDate2": "2026-07",
+    "duInflationRate2": 16.0071,
+    "defaultDownPaymentPct": 0.3
   },
   "panelSettings": {
     "singlePhase": {
