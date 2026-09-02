@@ -1,0 +1,611 @@
+{
+  "adminParams": {
+    "financingEntityName": "Solviva Energy Incorporated",
+    "financingEntityIsSeparate": false,
+    "grossMarginMinKwp": 1,
+    "grossMarginMidKwp": 15,
+    "grossMarginMaxKwp": 30,
+    "grossMarginMin": 0.2,
+    "grossMarginMid": 0.22,
+    "grossMarginMax": 0.3,
+    "grossMarginSolarMin": 0.2,
+    "grossMarginSolarMid": 0.25,
+    "grossMarginSolarMax": 0.3,
+    "grossMarginBatteryMin": 0.2,
+    "grossMarginBatteryMid": 0.26,
+    "grossMarginBatteryMax": 0.34,
+    "grossMarginMiscMin": 0.2,
+    "grossMarginMiscMid": 0.27,
+    "grossMarginMiscMax": 0.35,
+    "grossMarginReference": 0.3,
+    "merchantDiscountRate": 0.15,
+    "rateAnchorMax": 0.48,
+    "rateAnchorMid": 0.18,
+    "rateAnchorMin": 0.16,
+    "rateTenorWeight": 0.3,
+    "rateStepPct": 0.00125,
+    "earlyPayoffDiscountRate": 0.08,
+    "documentaryStampTaxRate": 0.0075,
+    "mountingSupportFloorCogs": 9019.7,
+    "mountingSupportPctOfPanels": 0.13,
+    "cablingTiers": [
+      {
+        "minPanels": 1,
+        "dcCablePct": 0.3,
+        "acCablePct": 0.2,
+        "conduitsPct": 0.6,
+        "panelBoardPct": 0.25
+      },
+      {
+        "minPanels": 8,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.16,
+        "conduitsPct": 0.57,
+        "panelBoardPct": 0.23
+      },
+      {
+        "minPanels": 10,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.13,
+        "conduitsPct": 0.46,
+        "panelBoardPct": 0.19
+      },
+      {
+        "minPanels": 13,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.13,
+        "conduitsPct": 0.38,
+        "panelBoardPct": 0.17
+      },
+      {
+        "minPanels": 16,
+        "dcCablePct": 0.25,
+        "acCablePct": 0.11,
+        "conduitsPct": 0.31,
+        "panelBoardPct": 0.17
+      },
+      {
+        "minPanels": 19,
+        "dcCablePct": 0.21,
+        "acCablePct": 0.11,
+        "conduitsPct": 0.25,
+        "panelBoardPct": 0.14
+      },
+      {
+        "minPanels": 24,
+        "dcCablePct": 0.17,
+        "acCablePct": 0.09,
+        "conduitsPct": 0.2,
+        "panelBoardPct": 0.11
+      },
+      {
+        "minPanels": 31,
+        "dcCablePct": 0.15,
+        "acCablePct": 0.09,
+        "conduitsPct": 0.2,
+        "panelBoardPct": 0.07
+      },
+      {
+        "minPanels": 62,
+        "dcCablePct": 0.12,
+        "acCablePct": 0.04,
+        "conduitsPct": 0.06,
+        "panelBoardPct": 0.03
+      },
+      {
+        "minPanels": 103,
+        "dcCablePct": 0.11,
+        "acCablePct": 0.04,
+        "conduitsPct": 0.06,
+        "panelBoardPct": 0.03
+      },
+      {
+        "minPanels": 155,
+        "dcCablePct": 0.1,
+        "acCablePct": 0.04,
+        "conduitsPct": 0.06,
+        "panelBoardPct": 0.03
+      },
+      {
+        "minPanels": 206,
+        "dcCablePct": 0.09,
+        "acCablePct": 0.04,
+        "conduitsPct": 0.06,
+        "panelBoardPct": 0.03
+      }
+    ],
+    "cablingTiersThreePhase": [
+      {
+        "minPanels": 1,
+        "dcCablePct": 0.3,
+        "acCablePct": 0.3,
+        "conduitsPct": 0.72,
+        "panelBoardPct": 0.37
+      },
+      {
+        "minPanels": 8,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.24,
+        "conduitsPct": 0.68,
+        "panelBoardPct": 0.34
+      },
+      {
+        "minPanels": 10,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.19,
+        "conduitsPct": 0.55,
+        "panelBoardPct": 0.28
+      },
+      {
+        "minPanels": 13,
+        "dcCablePct": 0.29,
+        "acCablePct": 0.19,
+        "conduitsPct": 0.45,
+        "panelBoardPct": 0.25
+      },
+      {
+        "minPanels": 16,
+        "dcCablePct": 0.24,
+        "acCablePct": 0.16,
+        "conduitsPct": 0.37,
+        "panelBoardPct": 0.24
+      },
+      {
+        "minPanels": 19,
+        "dcCablePct": 0.21,
+        "acCablePct": 0.16,
+        "conduitsPct": 0.3,
+        "panelBoardPct": 0.21
+      },
+      {
+        "minPanels": 24,
+        "dcCablePct": 0.17,
+        "acCablePct": 0.14,
+        "conduitsPct": 0.24,
+        "panelBoardPct": 0.15
+      },
+      {
+        "minPanels": 31,
+        "dcCablePct": 0.15,
+        "acCablePct": 0.14,
+        "conduitsPct": 0.24,
+        "panelBoardPct": 0.11
+      },
+      {
+        "minPanels": 62,
+        "dcCablePct": 0.12,
+        "acCablePct": 0.06,
+        "conduitsPct": 0.07,
+        "panelBoardPct": 0.05
+      },
+      {
+        "minPanels": 103,
+        "dcCablePct": 0.11,
+        "acCablePct": 0.06,
+        "conduitsPct": 0.07,
+        "panelBoardPct": 0.05
+      },
+      {
+        "minPanels": 155,
+        "dcCablePct": 0.1,
+        "acCablePct": 0.06,
+        "conduitsPct": 0.07,
+        "panelBoardPct": 0.05
+      },
+      {
+        "minPanels": 206,
+        "dcCablePct": 0.09,
+        "acCablePct": 0.06,
+        "conduitsPct": 0.07,
+        "panelBoardPct": 0.05
+      }
+    ],
+    "additionalDcCablePerMeterCogs": 750,
+    "additionalAcCablePerMeterCogs": 1600,
+    "laborInstallationPerKwpCogs": 5500,
+    "roofAsphaltPerKwpCogs": 6500,
+    "roofConcretePerKwpCogs": 12000,
+    "deliveryLocations": [
+      {
+        "id": "cebu",
+        "label": "Cebu",
+        "fixedFeeCogs": 37736,
+        "perPanelCogs": 3740,
+        "fixedFee": 64657,
+        "perPanel": 6409,
+        "available": true
+      },
+      {
+        "id": "siargao",
+        "label": "Siargao",
+        "fixedFeeCogs": 327053,
+        "perPanelCogs": 5748,
+        "fixedFee": 560366,
+        "perPanel": 9849,
+        "available": true
+      }
+    ],
+    "miscCatalog": [
+      {
+        "id": "mc-acb125",
+        "label": "AC Breaker, 125AT, 2-pole",
+        "cogs": 4650,
+        "price": 7968,
+        "available": true
+      },
+      {
+        "id": "mc-acb100",
+        "label": "AC Breaker, 100AT, 2-pole",
+        "cogs": 4350,
+        "price": 7454,
+        "available": true
+      },
+      {
+        "id": "mc-acb80",
+        "label": "AC Breaker, 80AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb75",
+        "label": "AC Breaker, 75AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb70",
+        "label": "AC Breaker, 70AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb60",
+        "label": "AC Breaker, 60AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb50",
+        "label": "AC Breaker, 50AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb40",
+        "label": "AC Breaker, 40AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-acb30",
+        "label": "AC Breaker, 30AT, 2-pole",
+        "cogs": 4089.12,
+        "price": 7007,
+        "available": true
+      },
+      {
+        "id": "mc-canopy",
+        "label": "Canopy",
+        "cogs": 17920,
+        "price": 30704,
+        "available": true
+      },
+      {
+        "id": "mc-trench",
+        "label": "Trenching (per Meter)",
+        "cogs": 6400,
+        "price": 10966,
+        "available": true
+      },
+      {
+        "id": "mc-serem",
+        "label": "Service Entry Remodelling",
+        "cogs": 23600,
+        "price": 40436,
+        "available": true
+      },
+      {
+        "id": "mc-cfei",
+        "label": "CFEI",
+        "cogs": 15000,
+        "price": 25701,
+        "available": true
+      },
+      {
+        "id": "mc-rtpi",
+        "label": "Request for Temporary Power Interruption",
+        "cogs": 10000,
+        "price": 17134,
+        "available": true
+      },
+      {
+        "id": "mc-signse",
+        "label": "Sign and seal of the plan",
+        "cogs": 10000,
+        "price": 17134,
+        "available": true
+      }
+    ],
+    "luzonOver30FixedFeeCogs": 4625,
+    "luzonOver30PerKmCogs": 132,
+    "rsdAvailable": true,
+    "rsdVariablePerPanelCogs": 1850,
+    "rsdFixedTransmitterCogs": 9506,
+    "rsdStandaloneLaborPerPanelCogs": 330,
+    "rsdStandaloneLaborMobilizationCogs": 6607,
+    "inverterStandaloneLaborPerUnitCogs": 2500,
+    "inverterStandaloneMobilizationCogs": 6607,
+    "fixedOverheadDeliveryLogisticsCogs": 19381,
+    "fixedOverheadWarehouseCogs": 832,
+    "fixedOverheadCustomsCogs": 0,
+    "fixedOverheadSafetySupervisionCogs": 3000,
+    "fixedOverheadTestingCogs": 3000,
+    "batteryPackages": [
+      {
+        "id": "pkg5kwh01",
+        "label": "5 kWh Pylontech",
+        "available": true,
+        "batteryUnitKwh": 5,
+        "batteryRackCapacity": 3,
+        "batteryUnitCogs": 50600,
+        "batteryRackCogs": 10000,
+        "atsCogs": 6000,
+        "criticalLoadsMaterialsCogs": 21000,
+        "laborWithSolarInstallCogs": 18500,
+        "standaloneLaborCogs": 25000,
+        "batteryUnitPrice": 97308,
+        "batteryRackPrice": 19231,
+        "atsPrice": 11539,
+        "criticalLoadsMaterials": 40385,
+        "laborWithSolarInstall": 35577,
+        "standaloneLabor": 48077
+      },
+      {
+        "id": "pkg16kwh01",
+        "label": "16 kWh Pylontech",
+        "available": true,
+        "batteryUnitKwh": 16,
+        "batteryRackCapacity": 1,
+        "batteryUnitCogs": 120600,
+        "batteryRackCogs": 0,
+        "atsCogs": 6000,
+        "criticalLoadsMaterialsCogs": 21000,
+        "laborWithSolarInstallCogs": 18500,
+        "standaloneLaborCogs": 25003,
+        "batteryUnitPrice": 231924,
+        "batteryRackPrice": 0,
+        "atsPrice": 11539,
+        "criticalLoadsMaterials": 40385,
+        "laborWithSolarInstall": 35577,
+        "standaloneLabor": 48077
+      }
+    ],
+    "kWhPerKwpPerDay": 3.8,
+    "batteryEfficiency": 0.92,
+    "maxDailySpillKwh": 0,
+    "batteryDepthOfDischarge": 0.95,
+    "panelAnnualDegradation": 0.005,
+    "lcoeNpvDiscountRate": 0.06,
+    "maintenanceInflationRate": 0.03,
+    "netMeteringEfficiency": 0.5,
+    "preventiveMaintenancePerPanelCogs": 330,
+    "preventiveMaintenancePerVisitCogs": 3303,
+    "promoCodes": [
+      {
+        "code": "SENIOR",
+        "label": "Senior Citizen",
+        "discount": 0.03
+      },
+      {
+        "code": "SOLV",
+        "label": "Solviva Partner",
+        "discount": 0.15
+      },
+      {
+        "code": "CASH",
+        "label": "Cash / Check / Direct Deposit Payment Method",
+        "discount": 0.12
+      },
+      {
+        "code": "SEMP",
+        "label": "Solviva Employee",
+        "discount": 0.2
+      }
+    ],
+    "quoteValidityDays": 30,
+    "minSystemKwp": 0,
+    "minDpTiers": [
+      {
+        "fromNetPrice": 0,
+        "minDpPct": 0.1
+      },
+      {
+        "fromNetPrice": 500000,
+        "minDpPct": 0.15
+      },
+      {
+        "fromNetPrice": 1000000,
+        "minDpPct": 0.2
+      }
+    ],
+    "maxTenorMonths": 60,
+    "defaultUtilityRate": 15,
+    "defaultMonthlyBill": 15000,
+    "gateAuthEnabled": true,
+    "minDaysToFirstPostInstallPayment": 44
+  },
+  "panelSettings": {
+    "singlePhase": {
+      "available": true,
+      "panelWatts": 630,
+      "panelCogs": 6200,
+      "panelDirectPrice": 11924,
+      "maxDcAcRatio": 1.3
+    },
+    "threePhase": {
+      "available": true,
+      "panelWatts": 650,
+      "panelCogs": 6200,
+      "panelDirectPrice": 11924,
+      "maxDcAcRatio": 1.6
+    }
+  },
+  "invertersSinglePhase": [
+    {
+      "ratedKw": 5,
+      "cogs": 37000,
+      "directPrice": 71154,
+      "available": true
+    },
+    {
+      "ratedKw": 6,
+      "cogs": 42000,
+      "directPrice": 80770,
+      "available": true
+    },
+    {
+      "ratedKw": 8,
+      "cogs": 60000,
+      "directPrice": 115385,
+      "available": true
+    },
+    {
+      "ratedKw": 12,
+      "cogs": 108000,
+      "directPrice": 207693,
+      "available": true
+    },
+    {
+      "ratedKw": 16,
+      "cogs": 139000,
+      "directPrice": 267308,
+      "available": true
+    }
+  ],
+  "invertersThreePhase": [
+    {
+      "ratedKw": 5,
+      "cogs": 36909,
+      "directPrice": 70979,
+      "available": true
+    },
+    {
+      "ratedKw": 10,
+      "cogs": 111000,
+      "directPrice": 213462,
+      "available": true
+    },
+    {
+      "ratedKw": 16,
+      "cogs": 177600,
+      "directPrice": 341539,
+      "available": true
+    },
+    {
+      "ratedKw": 20,
+      "cogs": 222000,
+      "directPrice": 426924,
+      "available": true
+    },
+    {
+      "ratedKw": 30,
+      "cogs": 333000,
+      "directPrice": 640385,
+      "available": true
+    },
+    {
+      "ratedKw": 50,
+      "cogs": 555000,
+      "directPrice": 1067308,
+      "available": true
+    }
+  ],
+  "devices": [
+    {
+      "name": "1.0hp AC",
+      "peakKw": 1,
+      "dutyFactor": 0.5
+    },
+    {
+      "name": "1.5hp AC",
+      "peakKw": 1.3,
+      "dutyFactor": 0.5
+    },
+    {
+      "name": "2.0hp AC",
+      "peakKw": 1.8,
+      "dutyFactor": 0.5
+    },
+    {
+      "name": "2.5hp AC",
+      "peakKw": 2,
+      "dutyFactor": 0.5
+    },
+    {
+      "name": "3.0hp AC",
+      "peakKw": 2.8,
+      "dutyFactor": 0.5
+    },
+    {
+      "name": "Microwave/Toaster",
+      "peakKw": 1,
+      "dutyFactor": 1
+    },
+    {
+      "name": "6\" Stove Burner",
+      "peakKw": 1.5,
+      "dutyFactor": 0.9
+    },
+    {
+      "name": "8\" Stove Burner",
+      "peakKw": 2.5,
+      "dutyFactor": 0.9
+    },
+    {
+      "name": "Electric Oven",
+      "peakKw": 3,
+      "dutyFactor": 0.8
+    },
+    {
+      "name": "Level-1 EV Charger",
+      "peakKw": 1.5,
+      "dutyFactor": 0.9
+    },
+    {
+      "name": "Level-2 EV Charger",
+      "peakKw": 9.6,
+      "dutyFactor": 0.9
+    },
+    {
+      "name": "Washing Machine",
+      "peakKw": 0.8,
+      "dutyFactor": 0.7
+    },
+    {
+      "name": "Elec Clothes Dryer",
+      "peakKw": 5,
+      "dutyFactor": 0.8
+    },
+    {
+      "name": "1kW Motor Load",
+      "peakKw": 1,
+      "dutyFactor": 0.7
+    },
+    {
+      "name": "5kW Heating Element",
+      "peakKw": 5,
+      "dutyFactor": 0.8
+    },
+    {
+      "name": "20W Lighting Elementeeeee",
+      "peakKw": 0.02,
+      "dutyFactor": 1
+    }
+  ]
+}

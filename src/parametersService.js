@@ -1,6 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const TABLE = "app_parameters";
+const LOCAL_JSON_STORAGE = "local-json";
+const LOCAL_JSON_PATH = path.join(
+  process.cwd(),
+  "data",
+  "parameters.local.json",
+);
 
 const EDIT_ROLES = new Set(["edit", "engineering", "product", "inventory"]);
 
@@ -199,6 +207,24 @@ async function resolveEditRole(supabase, accessToken) {
   }
 }
 
+function isLocalJsonStorage() {
+  return (
+    process.env.PARAMETERS_STORAGE === LOCAL_JSON_STORAGE &&
+    process.env.NODE_ENV === "development"
+  );
+}
+
+function assertLocalJsonStorage() {
+  if (
+    process.env.PARAMETERS_STORAGE === LOCAL_JSON_STORAGE &&
+    !isLocalJsonStorage()
+  ) {
+    throw new Error(
+      "local-json parameter storage is only allowed when NODE_ENV=development.",
+    );
+  }
+}
+
 function canRoleEditAdminSection(role, sectionKey) {
   if (role === "edit") return true;
   const set = ROLE_ADMIN_SECTIONS[role];
@@ -240,6 +266,19 @@ async function readCurrentPayload(supabase) {
   return data?.payload && typeof data.payload === "object" ? data.payload : {};
 }
 
+async function readLocalJsonPayload() {
+  try {
+    const raw = await fs.readFile(LOCAL_JSON_PATH, "utf8");
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+  } catch (error) {
+    if (error?.code === "ENOENT") return {};
+    throw new Error(`Local parameter file could not be read: ${error.message}`);
+  }
+}
+
 async function writePayload(supabase, payload) {
   const { error } = await supabase.from(TABLE).upsert(
     {
@@ -254,7 +293,21 @@ async function writePayload(supabase, payload) {
   }
 }
 
+async function writeLocalJsonPayload(payload) {
+  const directory = path.dirname(LOCAL_JSON_PATH);
+  const temporaryPath = `${LOCAL_JSON_PATH}.tmp`;
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(
+    temporaryPath,
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.rename(temporaryPath, LOCAL_JSON_PATH);
+}
+
 export async function getParameters() {
+  assertLocalJsonStorage();
+  if (isLocalJsonStorage()) return await readLocalJsonPayload();
   const supabase = getSupabaseClient();
   return await readCurrentPayload(supabase);
 }
@@ -264,9 +317,16 @@ export async function putParameters(body, accessToken, claimedRole) {
     return { status: 400, payload: { error: "Body must be a JSON object" } };
   }
 
-  const supabase = getSupabaseClient();
+  assertLocalJsonStorage();
+  const localJsonStorage = isLocalJsonStorage();
+  const supabase = localJsonStorage ? null : getSupabaseClient();
 
-  const auth = await resolveEditRole(supabase, accessToken);
+  // Local JSON mode is deliberately development-only. The frontend's local
+  // fallback session cannot produce a Supabase JWT, so use only its claimed
+  // role after the storage mode has passed the development guard.
+  const auth = localJsonStorage
+    ? { role: claimedRole || "edit", local: true }
+    : await resolveEditRole(supabase, accessToken);
   if (auth.error) {
     return { status: auth.status, payload: { error: auth.error } };
   }
@@ -277,7 +337,9 @@ export async function putParameters(body, accessToken, claimedRole) {
     return { status: 403, payload: { error: "Role has no edit access" } };
   }
 
-  const current = await readCurrentPayload(supabase);
+  const current = localJsonStorage
+    ? await readLocalJsonPayload()
+    : await readCurrentPayload(supabase);
 
   const merged = {
     adminParams: { ...(current.adminParams || {}) },
@@ -631,7 +693,11 @@ export async function putParameters(body, accessToken, claimedRole) {
     }
   }
 
-  await writePayload(supabase, merged);
+  if (localJsonStorage) {
+    await writeLocalJsonPayload(merged);
+  } else {
+    await writePayload(supabase, merged);
+  }
   return {
     status: 200,
     payload: {
