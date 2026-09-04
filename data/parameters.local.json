@@ -87,7 +87,7 @@
       },
       {
         "minPanels": 62,
-        "dcCablePct": 0.12,
+        "dcCablePct": 0.13,
         "acCablePct": 0.04,
         "conduitsPct": 0.06,
         "panelBoardPct": 0.03
@@ -173,7 +173,7 @@
       },
       {
         "minPanels": 62,
-        "dcCablePct": 0.12,
+        "dcCablePct": 0.15,
         "acCablePct": 0.06,
         "conduitsPct": 0.07,
         "panelBoardPct": 0.05
@@ -211,8 +211,8 @@
         "label": "Cebu",
         "fixedFeeCogs": 37736,
         "perPanelCogs": 3740,
-        "fixedFee": 64657,
-        "perPanel": 6409,
+        "fixedFee": 63758,
+        "perPanel": 6319,
         "available": true
       },
       {
@@ -220,8 +220,8 @@
         "label": "Siargao",
         "fixedFeeCogs": 327053,
         "perPanelCogs": 5748,
-        "fixedFee": 560366,
-        "perPanel": 9849,
+        "fixedFee": 552576,
+        "perPanel": 9712,
         "available": true
       }
     ],
@@ -230,105 +230,105 @@
         "id": "mc-acb125",
         "label": "AC Breaker, 125AT, 2-pole",
         "cogs": 4650,
-        "price": 7968,
+        "price": 7857,
         "available": true
       },
       {
         "id": "mc-acb100",
         "label": "AC Breaker, 100AT, 2-pole",
         "cogs": 4350,
-        "price": 7454,
+        "price": 7350,
         "available": true
       },
       {
         "id": "mc-acb80",
         "label": "AC Breaker, 80AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb75",
         "label": "AC Breaker, 75AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb70",
         "label": "AC Breaker, 70AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb60",
         "label": "AC Breaker, 60AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb50",
         "label": "AC Breaker, 50AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb40",
         "label": "AC Breaker, 40AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-acb30",
         "label": "AC Breaker, 30AT, 2-pole",
         "cogs": 4089.12,
-        "price": 7007,
+        "price": 6909,
         "available": true
       },
       {
         "id": "mc-canopy",
         "label": "Canopy",
         "cogs": 17920,
-        "price": 30704,
+        "price": 30277,
         "available": true
       },
       {
         "id": "mc-trench",
         "label": "Trenching (per Meter)",
         "cogs": 6400,
-        "price": 10966,
+        "price": 10814,
         "available": true
       },
       {
         "id": "mc-serem",
         "label": "Service Entry Remodelling",
         "cogs": 23600,
-        "price": 40436,
+        "price": 39874,
         "available": true
       },
       {
         "id": "mc-cfei",
         "label": "CFEI",
         "cogs": 15000,
-        "price": 25701,
+        "price": 25344,
         "available": true
       },
       {
         "id": "mc-rtpi",
         "label": "Request for Temporary Power Interruption",
         "cogs": 10000,
-        "price": 17134,
+        "price": 16896,
         "available": true
       },
       {
         "id": "mc-signse",
         "label": "Sign and seal of the plan",
         "cogs": 10000,
-        "price": 17134,
+        "price": 16896,
         "available": true
       }
     ],
@@ -383,7 +383,7 @@
         "atsPrice": 11539,
         "criticalLoadsMaterials": 40385,
         "laborWithSolarInstall": 35577,
-        "standaloneLabor": 48077
+        "standaloneLabor": 48083
       }
     ],
     "kWhPerKwpPerDay": 3.8,
@@ -438,7 +438,106 @@
     "defaultUtilityRate": 15,
     "defaultMonthlyBill": 15000,
     "gateAuthEnabled": true,
-    "minDaysToFirstPostInstallPayment": 44
+    "minDaysToFirstPostInstallPayment": 44,
+    "grossMarginMinKwpTp": 1,
+    "grossMarginMidKwpTp": 15,
+    "grossMarginMaxKwpTp": 30,
+    "grossMarginMinTp": 0.2,
+    "grossMarginMidTp": 0.22,
+    "grossMarginMaxTp": 0.3,
+    "grossMarginNoInverterSp": 0.3,
+    "grossMarginNoInverterTp": 0.3,
+    "componentMargins": {
+      "B": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "C": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "D": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "E": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "F": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "G": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "H": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "I": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "J": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "K": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "L": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "M": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "N": {
+        "otherwise": 0.3
+      },
+      "O": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "P": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      },
+      "Q": {
+        "mode": "follow",
+        "fixed": 0.3,
+        "otherwise": 0.3
+      }
+    },
+    "luzonFreeTravelKm": 30,
+    "irrYearsDefault": 25,
+    "duRateInflationDefault": 0,
+    "duInflationSourceName": "Meralco's Rates Archives",
+    "duInflationSourceUrl": "https://company.meralco.com.ph/news-and-advisories/rates-archives",
+    "duInflationBasis": "500 kWh consumption",
+    "duInflationDate1": "2016-07",
+    "duInflationRate1": 9.8165,
+    "duInflationDate2": "2026-07",
+    "duInflationRate2": 16.0071,
+    "defaultDownPaymentPct": 0.3
   },
   "panelSettings": {
     "singlePhase": {
@@ -603,7 +702,7 @@
       "dutyFactor": 0.8
     },
     {
-      "name": "20W Lighting Elementeeeee",
+      "name": "20W Lighting Element",
       "peakKw": 0.02,
       "dutyFactor": 1
     }

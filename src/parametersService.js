@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -9,8 +10,19 @@ const LOCAL_JSON_PATH = path.join(
   "data",
   "parameters.local.json",
 );
+const LOCAL_AUDIT_PATH = path.join(
+  process.cwd(),
+  "data",
+  "parameter-audit.local.jsonl",
+);
 
-const EDIT_ROLES = new Set(["edit", "engineering", "product", "inventory"]);
+const EDIT_ROLES = new Set([
+  "edit",
+  "engineering",
+  "product",
+  "inventory",
+  "finco",
+]);
 
 // Maps a role stored in public.user_roles (app_role enum) to the internal
 // admin edit-role vocabulary this service enforces. Only these DB roles may
@@ -21,6 +33,11 @@ const DB_ROLE_TO_EDIT_ROLE = {
   engineering: "engineering",
   product: "product",
   inventory: "inventory",
+  // v3-180 — FinCo/OpCo separation. The financing entity edits its own
+  // parameters (financing limits + interest rates + returns assumptions) and
+  // nothing else. Requires the matching value in the user_roles enum — see
+  // supabase/migrations/20260901_add_finco_role.sql.
+  finco: "finco",
 };
 
 const ROLE_ADMIN_SECTIONS = {
@@ -40,13 +57,26 @@ const ROLE_ADMIN_SECTIONS = {
   product: new Set([
     "margins",
     "quoteValidity",
+    // v3-180 — 'quoteLimits' now carries minSystemKwp only; the minimum
+    // down-payment tiers and maximum tenor moved to 'financingTerms' (FinCo).
     "quoteLimits",
     "step1Defaults",
-    "interestRates",
+    // v3-159 — Product-settable default down payment (a pre-fill, not a floor).
+    "step3Defaults",
     "promoCodes",
     "maintenance",
+    // NOTE: 'interestRates' deliberately left OFF this role — v3-180 moved the
+    // whole Interest Rates section to the FinCo role below.
   ]),
-  // Inventory-only editor — Inventory tab sections only.
+  // v3-180 — FinCo Admin: the financing entity's parameters ONLY.
+  finco: new Set([
+    "financingTerms",
+    "interestRates",
+    "returnsAssumptions",
+    "duInflationReference",
+  ]),
+  // Inventory-only editor — Inventory tab sections only. Not an upstream
+  // v3-207 role; added by this deployment (migration 20260731_add_inventory_role).
   inventory: new Set(["solarPanel", "cabling", "batteryPackage"]),
 };
 
@@ -54,6 +84,7 @@ const ROLE_INVENTORY_ACCESS = {
   engineering: true,
   inventory: true,
   product: false,
+  finco: false,
 };
 
 // Mirror of the frontend's PARAM_KEY_TO_SECTION (src/lib/permissions.js). This
@@ -80,7 +111,8 @@ const PARAM_KEY_TO_SECTION = {
   grossMarginMiscMin: "margins",
   grossMarginMiscMid: "margins",
   grossMarginMiscMax: "margins",
-  grossMarginReference: "margins",
+  // v3-190 — moved to FinCo (UI label renamed; key kept for stored payloads).
+  grossMarginReference: "returnsAssumptions",
   merchantDiscountRate: "margins",
   // Interest Rates
   rateAnchorMax: "interestRates",
@@ -131,8 +163,8 @@ const PARAM_KEY_TO_SECTION = {
   maxDailySpillKwh: "scheduleConstants",
   batteryDepthOfDischarge: "scheduleConstants",
   panelAnnualDegradation: "scheduleConstants",
-  lcoeNpvDiscountRate: "scheduleConstants",
-  maintenanceInflationRate: "scheduleConstants",
+  lcoeNpvDiscountRate: "returnsAssumptions", // v3-190 — Engineering → FinCo
+  maintenanceInflationRate: "returnsAssumptions", // v3-190 — Engineering → FinCo
   netMeteringEfficiency: "scheduleConstants",
   preventiveMaintenancePerPanelCogs: "scheduleConstants",
   preventiveMaintenancePerVisitCogs: "scheduleConstants",
@@ -141,13 +173,43 @@ const PARAM_KEY_TO_SECTION = {
   promoCodes: "promoCodes",
   // Quote Validity
   quoteValidityDays: "quoteValidity",
-  // Quote Limits (v3-68)
+  // Quote Limits (v3-68) — minSystemKwp ONLY since v3-180.
   minSystemKwp: "quoteLimits",
-  minDpTiers: "quoteLimits",
-  maxTenorMonths: "quoteLimits",
+  // Financing Limits (v3-180) — moved out of 'quoteLimits' to the FinCo role
+  // when the financing entity was separated from OpCo.
+  minDpTiers: "financingTerms",
+  maxTenorMonths: "financingTerms",
   // Step 1 Defaults (v3-70)
   defaultUtilityRate: "step1Defaults",
   defaultMonthlyBill: "step1Defaults",
+  // Step 3 Defaults (v3-159) — Product-settable default down payment.
+  defaultDownPaymentPct: "step3Defaults",
+  // Location (v3-199) — the Luzon free-delivery radius became a parameter;
+  // it was a hardcoded 30 km before.
+  luzonFreeTravelKm: "location",
+  // Margins (v3-191) — per-component margin table plus the three-phase curve
+  // anchors and the no-inverter (expansion / RSD-only / battery-only) margins.
+  componentMargins: "margins",
+  grossMarginMinTp: "margins",
+  grossMarginMidTp: "margins",
+  grossMarginMaxTp: "margins",
+  grossMarginMinKwpTp: "margins",
+  grossMarginMidKwpTp: "margins",
+  grossMarginMaxKwpTp: "margins",
+  grossMarginNoInverterSp: "margins",
+  grossMarginNoInverterTp: "margins",
+  // Returns Assumptions (v3-181 / v3-187) — FinCo-owned.
+  duRateInflationDefault: "returnsAssumptions",
+  irrYearsDefault: "returnsAssumptions",
+  // DU Inflation Reference (v3-183 / v3-190) — advisory calculator; never
+  // reaches a quote, but FinCo authors it and it travels with the PDF note.
+  duInflationBasis: "duInflationReference",
+  duInflationDate1: "duInflationReference",
+  duInflationDate2: "duInflationReference",
+  duInflationRate1: "duInflationReference",
+  duInflationRate2: "duInflationReference",
+  duInflationSourceName: "duInflationReference",
+  duInflationSourceUrl: "duInflationReference",
   // Maintenance Mode
   gateAuthEnabled: "maintenance",
 };
@@ -197,11 +259,12 @@ async function resolveEditRole(supabase, accessToken) {
         error: "Your account does not have permission to edit parameters.",
       };
     }
-    return { role: editRole, userId };
+    return { role: editRole, userId, email: userData.user.email || null };
   } catch (error) {
     return {
       role: "edit",
       userId,
+      email: userData.user.email || null,
       fallback: true,
     };
   }
@@ -305,6 +368,186 @@ async function writeLocalJsonPayload(payload) {
   await fs.rename(temporaryPath, LOCAL_JSON_PATH);
 }
 
+const INVENTORY_AREAS = new Set(["solarPanel", "cabling", "batteryPackage"]);
+const ENGINEERING_AREAS = new Set([
+  "variableCharges",
+  "roofMaterial",
+  "miscCatalog",
+  "location",
+  "standaloneCharges",
+  "fixedOverhead",
+  "scheduleConstants",
+  "maintenance",
+]);
+const PRODUCT_AREAS = new Set([
+  "margins",
+  "quoteValidity",
+  "quoteLimits",
+  "step1Defaults",
+  "step3Defaults",
+  "promoCodes",
+]);
+const FINCO_AREAS = new Set([
+  "financingTerms",
+  "interestRates",
+  "returnsAssumptions",
+  "duInflationReference",
+]);
+
+function areaForPath(changePath) {
+  if (
+    changePath.startsWith("panelSettings") ||
+    changePath.startsWith("invertersSinglePhase") ||
+    changePath.startsWith("invertersThreePhase") ||
+    changePath.startsWith("devices")
+  ) {
+    return "Inventory";
+  }
+  const key = changePath.startsWith("adminParams.")
+    ? changePath.slice("adminParams.".length).split(/[.[\]]/)[0]
+    : "";
+  const section = PARAM_KEY_TO_SECTION[key];
+  if (INVENTORY_AREAS.has(section)) return "Inventory";
+  if (ENGINEERING_AREAS.has(section)) return "Engineering";
+  if (PRODUCT_AREAS.has(section)) return "Product";
+  if (FINCO_AREAS.has(section)) return "FinCo";
+  return "Other";
+}
+
+function buildChanges(before, after, currentPath = "", changes = []) {
+  const beforeIsObject = before && typeof before === "object";
+  const afterIsObject = after && typeof after === "object";
+  if (
+    beforeIsObject &&
+    afterIsObject &&
+    !Array.isArray(before) &&
+    !Array.isArray(after)
+  ) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of keys) {
+      const childPath = currentPath ? `${currentPath}.${key}` : key;
+      buildChanges(before[key], after[key], childPath, changes);
+    }
+    return changes;
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const length = Math.max(before.length, after.length);
+    for (let index = 0; index < length; index += 1) {
+      buildChanges(
+        before[index],
+        after[index],
+        `${currentPath}[${index}]`,
+        changes,
+      );
+    }
+    return changes;
+  }
+  if (JSON.stringify(before) === JSON.stringify(after)) return changes;
+  const operation =
+    before === undefined ? "add" : after === undefined ? "remove" : "replace";
+  changes.push({
+    path: currentPath,
+    area: areaForPath(currentPath),
+    operation,
+    before: before === undefined ? null : before,
+    after: after === undefined ? null : after,
+  });
+  return changes;
+}
+
+function getAuditAreas(changes) {
+  return [...new Set(changes.map((change) => change.area))];
+}
+
+async function writeLocalAuditEvent(event) {
+  await fs.mkdir(path.dirname(LOCAL_AUDIT_PATH), { recursive: true });
+  await fs.appendFile(LOCAL_AUDIT_PATH, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+async function readLocalAuditEvents(limit) {
+  try {
+    const raw = await fs.readFile(LOCAL_AUDIT_PATH, "utf8");
+    return raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .reverse()
+      .slice(0, limit);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw new Error(`Local audit file could not be read: ${error.message}`);
+  }
+}
+
+async function writeAuditEvent(supabase, event) {
+  if (event.source === LOCAL_JSON_STORAGE) {
+    await writeLocalAuditEvent(event);
+    return;
+  }
+  const { error } = await supabase.from("parameter_audit_events").insert({
+    id: event.id,
+    actor_user_id: event.actorUserId,
+    actor_email: event.actorEmail,
+    actor_role: event.actorRole,
+    area: event.area,
+    source: event.source,
+    occurred_at: event.occurredAt,
+    timezone: event.timezone,
+    before_payload: event.beforePayload,
+    after_payload: event.afterPayload,
+    changes: event.changes,
+    applied_admin_keys: event.appliedAdminKeys,
+    ignored_admin_keys: event.ignoredAdminKeys,
+    inventory_applied: event.inventoryApplied,
+    request_id: event.requestId,
+    metadata: event.metadata,
+  });
+  if (error) {
+    throw new Error(`Audit event insert failed: ${error.message}`);
+  }
+}
+
+export async function getAuditEvents(
+  accessToken,
+  claimedRole,
+  requestedLimit = 100,
+) {
+  const limit = Math.min(Math.max(Number(requestedLimit) || 100, 1), 200);
+  assertLocalJsonStorage();
+  if (isLocalJsonStorage()) {
+    if (claimedRole !== "edit") {
+      return {
+        status: 403,
+        payload: { error: "Audit history is restricted to administrators." },
+      };
+    }
+    return { status: 200, payload: await readLocalAuditEvents(limit) };
+  }
+
+  const supabase = getSupabaseClient();
+  const auth = await resolveEditRole(supabase, accessToken);
+  if (auth.error) {
+    return { status: auth.status, payload: { error: auth.error } };
+  }
+  if (auth.role !== "edit") {
+    return {
+      status: 403,
+      payload: { error: "Audit history is restricted to administrators." },
+    };
+  }
+  const { data, error } = await supabase
+    .from("parameter_audit_events")
+    .select(
+      "id, actor_user_id, actor_email, actor_role, area, source, occurred_at, timezone, changes, applied_admin_keys, ignored_admin_keys, inventory_applied, request_id, metadata",
+    )
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    throw new Error(`Audit history query failed: ${error.message}`);
+  }
+  return { status: 200, payload: data || [] };
+}
+
 export async function getParameters() {
   assertLocalJsonStorage();
   if (isLocalJsonStorage()) return await readLocalJsonPayload();
@@ -312,7 +555,12 @@ export async function getParameters() {
   return await readCurrentPayload(supabase);
 }
 
-export async function putParameters(body, accessToken, claimedRole) {
+export async function putParameters(
+  body,
+  accessToken,
+  claimedRole,
+  requestId = randomUUID(),
+) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { status: 400, payload: { error: "Body must be a JSON object" } };
   }
@@ -325,7 +573,12 @@ export async function putParameters(body, accessToken, claimedRole) {
   // fallback session cannot produce a Supabase JWT, so use only its claimed
   // role after the storage mode has passed the development guard.
   const auth = localJsonStorage
-    ? { role: claimedRole || "edit", local: true }
+    ? {
+        role: claimedRole || "edit",
+        userId: "local-user",
+        email: "local-dev",
+        local: true,
+      }
     : await resolveEditRole(supabase, accessToken);
   if (auth.error) {
     return { status: auth.status, payload: { error: auth.error } };
@@ -697,6 +950,30 @@ export async function putParameters(body, accessToken, claimedRole) {
     await writeLocalJsonPayload(merged);
   } else {
     await writePayload(supabase, merged);
+  }
+  const changes = buildChanges(current, merged);
+  if (changes.length > 0) {
+    const occurredAt = new Date().toISOString();
+    const auditEvent = {
+      id: randomUUID(),
+      actorUserId: auth.userId || null,
+      actorEmail: auth.email || null,
+      actorRole: role,
+      area: getAuditAreas(changes).join(","),
+      areas: getAuditAreas(changes),
+      source: localJsonStorage ? LOCAL_JSON_STORAGE : "supabase",
+      occurredAt,
+      timezone: "Asia/Manila",
+      beforePayload: deepClone(current),
+      afterPayload: deepClone(merged),
+      changes,
+      appliedAdminKeys,
+      ignoredAdminKeys,
+      inventoryApplied,
+      requestId,
+      metadata: {},
+    };
+    await writeAuditEvent(supabase, auditEvent);
   }
   return {
     status: 200,

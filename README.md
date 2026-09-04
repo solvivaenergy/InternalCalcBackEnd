@@ -20,6 +20,12 @@ Render-ready backend for the Solviva calculator.
 - `VITE_ENGINEERING_PASSWORD`
 - `VITE_PRODUCT_PASSWORD`
 
+Successful parameter saves are recorded in `parameter_audit_events` with the
+verified actor, role, timestamp, source, complete before/after payloads, and a
+field-level `changes` list. Local development writes the same event shape to
+`data/parameter-audit.local.jsonl` instead of Supabase; that file is ignored by
+Git because it may contain local user activity.
+
 ## Local run
 
 ```bash
