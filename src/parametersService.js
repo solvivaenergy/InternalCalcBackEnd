@@ -108,6 +108,9 @@ const PARAM_KEY_TO_SECTION = {
   grossMarginBatteryMin: "margins",
   grossMarginBatteryMid: "margins",
   grossMarginBatteryMax: "margins",
+  grossMarginBatteryMinKwh: "margins",
+  grossMarginBatteryMidKwh: "margins",
+  grossMarginBatteryMaxKwh: "margins",
   grossMarginMiscMin: "margins",
   grossMarginMiscMid: "margins",
   grossMarginMiscMax: "margins",
@@ -502,7 +505,9 @@ function isDerivedAuditPath(changePath) {
       return true;
     }
   }
-  return DERIVED_AUDIT_PATH_PATTERNS.some((pattern) => pattern.test(changePath));
+  return DERIVED_AUDIT_PATH_PATTERNS.some((pattern) =>
+    pattern.test(changePath),
+  );
 }
 
 function getAuditAreas(changes) {
@@ -960,6 +965,32 @@ export async function putParameters(
         payload: {
           error:
             "Refusing to save: gross-margin capacity breakpoints (kWp) must be positive and strictly increasing: MinKwp < MidKwp < MaxKwp.",
+        },
+      };
+    }
+  }
+
+  // v3-208 — battery capacity breakpoints (kWh). The battery margin rides
+  // its own axis (production-main rule); same positive strictly-increasing
+  // shape rule as the kWp breakpoints above.
+  const batteryKwhKeys = [
+    "grossMarginBatteryMinKwh",
+    "grossMarginBatteryMidKwh",
+    "grossMarginBatteryMaxKwh",
+  ];
+  if (batteryKwhKeys.some((k) => k in ap)) {
+    const [x1, x2, x3] = batteryKwhKeys.map((k) => ap[k]);
+    if (
+      ![x1, x2, x3].every(
+        (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
+      ) ||
+      !(x1 < x2 && x2 < x3)
+    ) {
+      return {
+        status: 400,
+        payload: {
+          error:
+            "Refusing to save: battery gross-margin capacity breakpoints (kWh) must be positive and strictly increasing: MinKwh < MidKwh < MaxKwh.",
         },
       };
     }
