@@ -455,6 +455,56 @@ function buildChanges(before, after, currentPath = "", changes = []) {
   return changes;
 }
 
+// ── Derived prices are NOT audit inputs ──────────────────────────────────────
+// Every `price` / `fixedFee` / `perPanel` / `directPrice` below is recomputed
+// client-side from the *Cogs inputs + the live reference margin on each load
+// and save (v3-83 deriveDirectPrices). They can never be edited directly, so
+// when the reference margin stored here and the margin a saving client last
+// derived with disagree, the raw diff lights up every miscCatalog[x].price,
+// deliveryLocations[x].fixedFee/perPanel, etc. as "changed" even though no
+// admin touched those tables — the phantom 20-field audit events. The real
+// input changes (a *Cogs edit, or the margin edit itself) still audit under
+// their own paths, so filtering the derived ripple loses no information.
+const DERIVED_ADMIN_SCALAR_PRICES = new Set([
+  "mountingSupportFloorPrice",
+  "additionalDcCablePerMeter",
+  "additionalAcCablePerMeter",
+  "laborInstallationPerKwp",
+  "rsdVariablePerPanel",
+  "rsdFixedTransmitter",
+  "roofAsphaltPerKwp",
+  "roofConcretePerKwp",
+  "luzonOver30FixedFee",
+  "luzonOver30PerKm",
+  "rsdStandaloneLaborPerPanel",
+  "rsdStandaloneLaborMobilization",
+  "inverterStandaloneLaborPerUnit",
+  "inverterStandaloneMobilization",
+  "fixedOverheadDeliveryLogistics",
+  "fixedOverheadWarehouse",
+  "fixedOverheadCustoms",
+  "fixedOverheadSafetySupervision",
+  "fixedOverheadTesting",
+  "preventiveMaintenancePerPanel",
+  "preventiveMaintenancePerVisit",
+]);
+const DERIVED_AUDIT_PATH_PATTERNS = [
+  /^adminParams\.miscCatalog\[\d+\]\.price$/,
+  /^adminParams\.deliveryLocations\[\d+\]\.(fixedFee|perPanel)$/,
+  /^adminParams\.batteryPackages\[\d+\]\.(batteryUnitPrice|batteryRackPrice|atsPrice|criticalLoadsMaterials|laborWithSolarInstall|standaloneLabor)$/,
+  /^panelSettings\.(singlePhase|threePhase)\.panelDirectPrice$/,
+  /^inverters(Single|Three)Phase\[\d+\]\.directPrice$/,
+];
+function isDerivedAuditPath(changePath) {
+  if (changePath.startsWith("adminParams.")) {
+    const key = changePath.slice("adminParams.".length);
+    if (!/[.[\]]/.test(key) && DERIVED_ADMIN_SCALAR_PRICES.has(key)) {
+      return true;
+    }
+  }
+  return DERIVED_AUDIT_PATH_PATTERNS.some((pattern) => pattern.test(changePath));
+}
+
 function getAuditAreas(changes) {
   return [...new Set(changes.map((change) => change.area))];
 }
@@ -951,7 +1001,14 @@ export async function putParameters(
   } else {
     await writePayload(supabase, merged);
   }
-  const changes = buildChanges(current, merged);
+  // Derived COGS→price ripples are filtered out of the audit trail (see
+  // isDerivedAuditPath): only authored input changes are recorded, so a save
+  // whose payload merely re-derived prices at a different live margin no
+  // longer logs phantom miscCatalog/deliveryLocations edits — and produces
+  // no event at all when nothing authored changed.
+  const changes = buildChanges(current, merged).filter(
+    (change) => !isDerivedAuditPath(change.path),
+  );
   if (changes.length > 0) {
     const occurredAt = new Date().toISOString();
     const auditEvent = {
