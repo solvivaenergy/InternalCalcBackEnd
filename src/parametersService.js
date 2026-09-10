@@ -105,12 +105,31 @@ const PARAM_KEY_TO_SECTION = {
   grossMarginSolarMin: "margins",
   grossMarginSolarMid: "margins",
   grossMarginSolarMax: "margins",
+  // LEGACY battery GM anchor names (pre-v3-209 alignment). Retained so a blob
+  // saved before the rename still validates; the frontend's
+  // migrateLegacyBatteryGm() copies these onto the batteryGm* keys below.
   grossMarginBatteryMin: "margins",
   grossMarginBatteryMid: "margins",
   grossMarginBatteryMax: "margins",
   grossMarginBatteryMinKwh: "margins",
   grossMarginBatteryMidKwh: "margins",
   grossMarginBatteryMaxKwh: "margins",
+  // v3-209 — battery GM curve, current names.
+  batteryGmMin: "margins",
+  batteryGmMid: "margins",
+  batteryGmMax: "margins",
+  batteryGmMinKwh: "margins",
+  batteryGmMidKwh: "margins",
+  batteryGmMaxKwh: "margins",
+  // v3-211 — flat-mode option on each of the three GM curves.
+  gmCurveModeSp: "margins",
+  gmFlatSp: "margins",
+  gmCurveModeTp: "margins",
+  gmFlatTp: "margins",
+  batteryGmMode: "margins",
+  batteryGmFlat: "margins",
+  // v3-210 — sales commission allowance; grosses up every COGS-derived price.
+  salesCommissionRate: "margins",
   grossMarginMiscMin: "margins",
   grossMarginMiscMid: "margins",
   grossMarginMiscMax: "margins",
@@ -145,8 +164,14 @@ const PARAM_KEY_TO_SECTION = {
   luzonOver30FixedFeeCogs: "location",
   luzonOver30PerKmCogs: "location",
   // Cabling
+  // LEGACY percentage ladders (pre-v3-216). Retained so an unmigrated blob
+  // still validates and saves.
   cablingTiers: "cabling",
   cablingTiersThreePhase: "cabling",
+  // v3-216 — the cabling ladder is now ABSOLUTE PESO COGS per anchor panel
+  // count, decoupled from panel price.
+  cablingCogsTiers: "cabling",
+  cablingCogsTiersThreePhase: "cabling",
   // Battery Packages
   batteryPackages: "batteryPackage",
   // Standalone Retrofit Charges
@@ -752,6 +777,19 @@ export async function putParameters(
         error: "Refusing to save: cablingTiersThreePhase cannot be empty.",
       },
     };
+  }
+  // v3-216 — same guard for the peso COGS ladders that replaced the
+  // percentage tables. The engine needs at least one anchor row per phase.
+  for (const key of ["cablingCogsTiers", "cablingCogsTiersThreePhase"]) {
+    if (
+      Array.isArray(merged.adminParams?.[key]) &&
+      merged.adminParams[key].length === 0
+    ) {
+      return {
+        status: 400,
+        payload: { error: `Refusing to save: ${key} cannot be empty.` },
+      };
+    }
   }
   if (
     Array.isArray(merged.adminParams?.batteryPackages) &&
