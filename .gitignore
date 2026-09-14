@@ -3,3 +3,5 @@ node_modules/
 .env.*
 *.log
 .DS_Store
+# Keep the local parameter database trackable and reviewable.
+data/parameter-audit.local.jsonl
