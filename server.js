@@ -1,7 +1,12 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import { buildQuote } from "./src/quoteService.js";
-import { getParameters, putParameters } from "./src/parametersService.js";
+import {
+  getParameters,
+  putParameters,
+  getAuditEvents,
+} from "./src/parametersService.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -76,6 +81,27 @@ app.get("/api/parameters", async (_req, res) => {
   }
 });
 
+app.get("/api/parameter-audit", async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"] || "";
+    const accessToken = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
+    const claimedRole = req.headers["x-solviva-role"] || "";
+    const result = await getAuditEvents(
+      accessToken,
+      claimedRole,
+      req.query.limit,
+    );
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Failed to load audit history.",
+      detail: String(error?.message || error),
+    });
+  }
+});
+
 app.put("/api/parameters", async (req, res) => {
   try {
     const authHeader = req.headers["authorization"] || "";
@@ -83,7 +109,13 @@ app.put("/api/parameters", async (req, res) => {
       ? authHeader.slice("Bearer ".length).trim()
       : "";
     const claimedRole = req.headers["x-solviva-role"] || "";
-    const result = await putParameters(req.body, accessToken, claimedRole);
+    const requestId = randomUUID();
+    const result = await putParameters(
+      req.body,
+      accessToken,
+      claimedRole,
+      requestId,
+    );
     return res.status(result.status).json(result.payload);
   } catch (error) {
     return res.status(500).json({
