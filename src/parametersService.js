@@ -603,6 +603,29 @@ export async function getAuditEvents(
   return { status: 200, payload: data || [] };
 }
 
+// Verifies a caller's Supabase JWT and nothing else — no role resolution.
+// Exported for endpoints that need only "is this a real signed-in user?", so
+// they do not have to construct a second service-role client of their own.
+// Returns { userId } on success, or { status, error } on failure, matching
+// resolveEditRole's shape and its 401 wording.
+export async function verifySession(accessToken) {
+  if (!accessToken) {
+    return { status: 401, error: "Missing bearer token" };
+  }
+  let supabase;
+  try {
+    supabase = getSupabaseClient();
+  } catch (error) {
+    // Misconfiguration, not a caller problem — do not report it as a 401.
+    return { status: 500, error: "Auth is not configured." };
+  }
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data?.user) {
+    return { status: 401, error: "Invalid or expired session token" };
+  }
+  return { userId: data.user.id };
+}
+
 export async function getParameters() {
   assertLocalJsonStorage();
   if (isLocalJsonStorage()) return await readLocalJsonPayload();
