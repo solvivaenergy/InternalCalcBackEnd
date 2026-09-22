@@ -221,7 +221,9 @@ const PARAM_KEY_TO_SECTION = {
 // public.user_roles. Returns { role } on success or { status, error } on
 // failure. The service-role client can both validate the token
 // (auth.getUser) and read user_roles under RLS-bypass.
-async function resolveEditRole(supabase, accessToken) {
+// Exported (v3-215) so usersService.js applies the SAME Super Admin bar as
+// audit history rather than growing a second role resolver that drifts.
+export async function resolveEditRole(supabase, accessToken) {
   if (!accessToken) {
     return { status: 401, error: "Missing bearer token" };
   }
@@ -307,7 +309,8 @@ function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
-function getSupabaseClient() {
+// Exported (v3-215) for usersService.js — one service-role client factory.
+export function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
@@ -601,6 +604,29 @@ export async function getAuditEvents(
     throw new Error(`Audit history query failed: ${error.message}`);
   }
   return { status: 200, payload: data || [] };
+}
+
+// Verifies a caller's Supabase JWT and nothing else — no role resolution.
+// Exported for endpoints that need only "is this a real signed-in user?", so
+// they do not have to construct a second service-role client of their own.
+// Returns { userId } on success, or { status, error } on failure, matching
+// resolveEditRole's shape and its 401 wording.
+export async function verifySession(accessToken) {
+  if (!accessToken) {
+    return { status: 401, error: "Missing bearer token" };
+  }
+  let supabase;
+  try {
+    supabase = getSupabaseClient();
+  } catch (error) {
+    // Misconfiguration, not a caller problem — do not report it as a 401.
+    return { status: 500, error: "Auth is not configured." };
+  }
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data?.user) {
+    return { status: 401, error: "Invalid or expired session token" };
+  }
+  return { userId: data.user.id };
 }
 
 export async function getParameters() {

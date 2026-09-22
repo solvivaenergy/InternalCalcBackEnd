@@ -8,6 +8,8 @@ Render-ready backend for the Solviva calculator.
 - `POST /api/quote`
 - `GET /api/parameters`
 - `PUT /api/parameters`
+- `GET /api/users` — Super Admin only (Bearer JWT). Lists auth accounts with their resolved role.
+- `POST /api/users` — Super Admin only (Bearer JWT). Creates an account: `{ email, role, displayName?, mobile?, password? | ssoOnly: true }`. Writes `app_metadata.role`, `user_metadata` and `public.user_roles` the same way `scripts/set-user-role.mjs` does.
 
 ## Environment variables
 
