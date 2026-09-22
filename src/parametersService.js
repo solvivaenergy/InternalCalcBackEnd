@@ -221,7 +221,9 @@ const PARAM_KEY_TO_SECTION = {
 // public.user_roles. Returns { role } on success or { status, error } on
 // failure. The service-role client can both validate the token
 // (auth.getUser) and read user_roles under RLS-bypass.
-async function resolveEditRole(supabase, accessToken) {
+// Exported (v3-215) so usersService.js applies the SAME Super Admin bar as
+// audit history rather than growing a second role resolver that drifts.
+export async function resolveEditRole(supabase, accessToken) {
   if (!accessToken) {
     return { status: 401, error: "Missing bearer token" };
   }
@@ -307,7 +309,8 @@ function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
-function getSupabaseClient() {
+// Exported (v3-215) for usersService.js — one service-role client factory.
+export function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {

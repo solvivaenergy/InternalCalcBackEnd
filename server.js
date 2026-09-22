@@ -10,6 +10,7 @@ import {
   getAuditEvents,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
+import { listUsers, createUser } from "./src/usersService.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -149,6 +150,40 @@ app.get("/api/crm-contact", async (req, res) => {
     // a traceback plus the database name and the integration username.
     console.error("[crm-contact] unexpected", error);
     return res.status(500).json({ error: "CRM lookup failed." });
+  }
+});
+
+// v3-215 — Super Admin user management. Both routes verify the Supabase JWT
+// server-side and require user_roles.role = 'admin' (src/usersService.js);
+// x-solviva-role is deliberately not read. Registered BEFORE the catch-all.
+app.get("/api/users", async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"] || "";
+    const accessToken = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
+    const result = await listUsers(accessToken);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[users] list failed", error);
+    return res.status(500).json({ error: "Failed to load users." });
+  }
+});
+
+app.post("/api/users", async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"] || "";
+    const accessToken = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
+    const requestId = randomUUID();
+    const result = await createUser(req.body, accessToken, requestId);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    // No `detail`: the body holds a password, and a thrown error could echo
+    // request state. Log server-side, answer generically.
+    console.error("[users] create failed", error);
+    return res.status(500).json({ error: "Failed to create the user." });
   }
 });
 
