@@ -10,7 +10,12 @@ import {
   getAuditEvents,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
-import { listUsers, createUser } from "./src/usersService.js";
+import {
+  listUsers,
+  createUser,
+  updateUser,
+  setUserArchived,
+} from "./src/usersService.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -33,7 +38,7 @@ app.use((req, res, next) => {
     );
     res.setHeader("Vary", "Origin");
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, x-solviva-edit-password, x-solviva-role",
@@ -153,16 +158,20 @@ app.get("/api/crm-contact", async (req, res) => {
   }
 });
 
-// v3-215 — Super Admin user management. Both routes verify the Supabase JWT
-// server-side and require user_roles.role = 'admin' (src/usersService.js);
-// x-solviva-role is deliberately not read. Registered BEFORE the catch-all.
+// v3-215 / v3-218 — Super Admin user management. Every route verifies the
+// Supabase JWT server-side and requires user_roles.role = 'admin'
+// (src/usersService.js); x-solviva-role is deliberately not read. Registered
+// BEFORE the catch-all.
+const bearerToken = (req) => {
+  const authHeader = req.headers["authorization"] || "";
+  return authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+};
+
 app.get("/api/users", async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"] || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : "";
-    const result = await listUsers(accessToken);
+    const result = await listUsers(bearerToken(req));
     return res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("[users] list failed", error);
@@ -172,18 +181,49 @@ app.get("/api/users", async (req, res) => {
 
 app.post("/api/users", async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"] || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : "";
     const requestId = randomUUID();
-    const result = await createUser(req.body, accessToken, requestId);
+    const result = await createUser(req.body, bearerToken(req), requestId);
     return res.status(result.status).json(result.payload);
   } catch (error) {
     // No `detail`: the body holds a password, and a thrown error could echo
     // request state. Log server-side, answer generically.
     console.error("[users] create failed", error);
     return res.status(500).json({ error: "Failed to create the user." });
+  }
+});
+
+// Edit role / display name / mobile. Body: { role?, displayName?, mobile? }.
+app.patch("/api/users/:id", async (req, res) => {
+  try {
+    const requestId = randomUUID();
+    const result = await updateUser(req.params.id, req.body, bearerToken(req), requestId);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[users] update failed", error);
+    return res.status(500).json({ error: "Failed to update the user." });
+  }
+});
+
+// Archive = ban (reversible, nothing deleted); restore = lift the ban.
+app.post("/api/users/:id/archive", async (req, res) => {
+  try {
+    const requestId = randomUUID();
+    const result = await setUserArchived(req.params.id, true, bearerToken(req), requestId);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[users] archive failed", error);
+    return res.status(500).json({ error: "Failed to archive the user." });
+  }
+});
+
+app.post("/api/users/:id/restore", async (req, res) => {
+  try {
+    const requestId = randomUUID();
+    const result = await setUserArchived(req.params.id, false, bearerToken(req), requestId);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[users] restore failed", error);
+    return res.status(500).json({ error: "Failed to restore the user." });
   }
 });
 

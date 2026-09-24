@@ -10,6 +10,8 @@ Render-ready backend for the Solviva calculator.
 - `PUT /api/parameters`
 - `GET /api/users` — Super Admin only (Bearer JWT). Lists auth accounts with their resolved role.
 - `POST /api/users` — Super Admin only (Bearer JWT). Creates an account: `{ email, role, displayName?, mobile?, password? | ssoOnly: true }`. Writes `app_metadata.role`, `user_metadata` and `public.user_roles` the same way `scripts/set-user-role.mjs` does.
+- `PATCH /api/users/:id` — Super Admin only (Bearer JWT). Edits `{ role?, displayName?, mobile? }` (absent = unchanged, `null`/`""` = cleared) in the same three places. Refuses to demote the caller's own role.
+- `POST /api/users/:id/archive` / `POST /api/users/:id/restore` — Super Admin only (Bearer JWT). Archive bans the account (`ban_duration` ~100 years, as `scripts/deactivate-user.mjs` does) so it cannot sign in; nothing is deleted and restore lifts the ban. Refuses to archive the caller's own account.
 
 ## Environment variables
 
