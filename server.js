@@ -10,6 +10,7 @@ import {
   getAuditEvents,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
+import { createQuotationFromProposal } from "./src/odooQuotationService.js";
 import {
   listUsers,
   createUser,
@@ -224,6 +225,25 @@ app.post("/api/users/:id/restore", async (req, res) => {
   } catch (error) {
     console.error("[users] restore failed", error);
     return res.status(500).json({ error: "Failed to restore the user." });
+  }
+});
+
+// Sprint Dinuguan (064C/E/J/K) — the calculator pushes a generated proposal as
+// a DRAFT quotation on the Odoo opportunity. Any signed-in Supabase user may
+// call it (same product decision as /api/crm-contact); the JWT is verified
+// server-side and its email picks the salesperson. Never blocks the PDF: the
+// frontend renders every non-2xx as a warning banner. Registered BEFORE the
+// catch-all.
+app.post("/api/odoo/quotation", async (req, res) => {
+  try {
+    const requestId = randomUUID();
+    const result = await createQuotationFromProposal(req.body, bearerToken(req), requestId);
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    // No `detail`: an Odoo fault carries a traceback plus the database name
+    // and the integration username.
+    console.error("[odoo-quotation] unexpected", error);
+    return res.status(500).json({ error: "Quotation push failed." });
   }
 });
 

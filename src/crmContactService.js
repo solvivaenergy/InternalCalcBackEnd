@@ -10,15 +10,17 @@
 //   cannot go there. This service holds the credential and returns only the
 //   three fields the form needs.
 //
-// Transport is JSON-RPC over global fetch — no new dependency. The instance's
-// /xmlrpc/2/common returns HTTP 405, so JSON-RPC is the only option.
+// Transport is JSON-RPC over global fetch — see src/odooClient.js, which this
+// service shared out when the Dinuguan sprint added a second Odoo caller.
 // =============================================================================
 
 import { verifySession } from "./parametersService.js";
-
-// Read lazily, not at module-evaluation time: env loading happens in an
-// imported side-effect module, and a top-level read here could still race it.
-const odooTimeoutMs = () => Number(process.env.ODOO_TIMEOUT_MS || 8000);
+import {
+  odooConfig,
+  missingOdooEnv,
+  odooTimeoutMs,
+  searchRead,
+} from "./odooClient.js";
 
 // "Project Number" is the crm.lead record id — the instance has no
 // project-number field (a full 660-field dump of crm.lead has no
@@ -118,77 +120,7 @@ export function resolveName(lead) {
 }
 
 // ─── Odoo JSON-RPC ───────────────────────────────────────────────────────────
-
-function odooConfig() {
-  const url = (process.env.ODOO_URL || "").replace(/\/+$/, "");
-  const db = process.env.ODOO_DB || "";
-  const user = process.env.ODOO_USER || "";
-  const apiKey = process.env.ODOO_API_KEY || "";
-  if (!url || !db || !user || !apiKey) return null;
-  return { url, db, user, apiKey };
-}
-
-// Odoo answers FAULTS with HTTP 200 and an `error` key, so `res.ok` proves
-// nothing. Worse, wrong credentials return 200 with `{"result": false}` and no
-// `error` key at all — which is why callers must type-check `result` rather
-// than truthiness alone.
-async function rpc(cfg, payload, signal) {
-  const res = await fetch(`${cfg.url}/jsonrpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method: "call", id: 1, ...payload }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`odoo http ${res.status}`);
-  const body = await res.json();
-  // Never propagate body.error upward verbatim: Odoo fault payloads embed a
-  // full traceback plus the database name and username.
-  if (body && body.error) {
-    const data = (body.error && body.error.data) || {};
-    throw new Error(`odoo fault ${data.name || body.error.message || "unknown"}`);
-  }
-  return body ? body.result : undefined;
-}
-
-// authenticate() costs a round trip, so the uid is cached in module memory.
-// A stale uid surfaces as an access error, which callers recover from by
-// clearing the cache and authenticating once more.
-let uidCache = { uid: null, at: 0 };
-const UID_TTL_MS = 10 * 60 * 1000;
-
-async function authenticate(cfg, signal, force = false) {
-  const fresh = Date.now() - uidCache.at < UID_TTL_MS;
-  if (!force && uidCache.uid && fresh) return uidCache.uid;
-  const result = await rpc(
-    cfg,
-    {
-      params: {
-        service: "common",
-        method: "authenticate",
-        args: [cfg.db, cfg.user, cfg.apiKey, {}],
-      },
-    },
-    signal,
-  );
-  // Bad credentials land here as `false`, not as an error.
-  if (typeof result !== "number") throw new Error("odoo auth rejected");
-  uidCache = { uid: result, at: Date.now() };
-  return result;
-}
-
-function searchRead(cfg, uid, model, domain, fields, signal) {
-  return rpc(
-    cfg,
-    {
-      params: {
-        service: "object",
-        method: "execute_kw",
-        args: [cfg.db, uid, cfg.apiKey, model, "search_read", [domain], { fields, limit: 1 }],
-      },
-    },
-    signal,
-  );
-}
+// Transport, uid cache and the stale-session retry live in odooClient.js.
 
 const LEAD_FIELDS = [
   "id",
@@ -225,10 +157,7 @@ export async function getCrmContact(projectNumber, accessToken) {
     // missing credential as "try again shortly" sends whoever is debugging
     // after a network fault that does not exist. Names which vars are absent
     // (never their values) because this is an operator error, not a rep one.
-    const missing = ["ODOO_URL", "ODOO_DB", "ODOO_USER", "ODOO_API_KEY"].filter(
-      (k) => !process.env[k],
-    );
-    console.error("[crm-contact] odoo not configured", { missing });
+    console.error("[crm-contact] odoo not configured", { missing: missingOdooEnv() });
     return {
       status: 503,
       payload: {
@@ -243,26 +172,16 @@ export async function getCrmContact(projectNumber, accessToken) {
 
   let rows;
   try {
-    let uid = await authenticate(cfg, signal);
     // search_read rather than read: an absent id — or one hidden by a record
     // rule — collapses to [] instead of raising, so one 404 path covers both.
     // The `active` leaf is mandatory: 18.9% of leads are archived and some are
     // still quotable, so omitting it would 404 ~38k valid Project Numbers.
+    // executeKw (via searchRead) retries once on a possibly-stale cached uid.
     const domain = [
       ["id", "=", id],
       ["active", "in", [true, false]],
     ];
-    try {
-      rows = await searchRead(cfg, uid, "crm.lead", domain, LEAD_FIELDS, signal);
-    } catch (err) {
-      // One retry on a possibly-stale cached uid.
-      if (/access|session|uid/i.test(String(err.message))) {
-        uid = await authenticate(cfg, signal, true);
-        rows = await searchRead(cfg, uid, "crm.lead", domain, LEAD_FIELDS, signal);
-      } else {
-        throw err;
-      }
-    }
+    rows = await searchRead(cfg, "crm.lead", domain, LEAD_FIELDS, signal, { limit: 1 });
   } catch (err) {
     // Log the shape, never the contact data.
     console.error("[crm-contact] odoo lookup failed", {

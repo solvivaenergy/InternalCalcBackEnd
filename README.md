@@ -12,6 +12,8 @@ Render-ready backend for the Solviva calculator.
 - `POST /api/users` — Super Admin only (Bearer JWT). Creates an account: `{ email, role, displayName?, mobile?, password? | ssoOnly: true }`. Writes `app_metadata.role`, `user_metadata` and `public.user_roles` the same way `scripts/set-user-role.mjs` does.
 - `PATCH /api/users/:id` — Super Admin only (Bearer JWT). Edits `{ role?, displayName?, mobile? }` (absent = unchanged, `null`/`""` = cleared) in the same three places. Refuses to demote the caller's own role.
 - `POST /api/users/:id/archive` / `POST /api/users/:id/restore` — Super Admin only (Bearer JWT). Archive bans the account (`ban_duration` ~100 years, as `scripts/deactivate-user.mjs` does) so it cannot sign in; nothing is deleted and restore lifts the ban. Refuses to archive the caller's own account.
+- `GET /api/crm-contact?projectNumber=` — any signed-in user (Bearer JWT). Resolves an Odoo lead id to the customer's name, email and mobile (story 043D).
+- `POST /api/odoo/quotation` — any signed-in user (Bearer JWT). Creates a DRAFT quotation on the Odoo opportunity from a generated proposal: `{ leadId, proposal: { quoteRef, generatedAt, validUntil, customer, agent, system, quote, boq[] } }` (sprint Dinuguan, stories 064C/E/J/K). Returns `201 { orderId, orderName, salespersonSource, warnings[] }`; `503 not_configured` when the `ODOO_*` variables are absent; `422 lead_has_no_partner` when the lead has no contact. See `docs/dinuguan-odoo-deployment.md` for the Odoo-side fields it fills.
 
 ## Environment variables
 
@@ -23,6 +25,8 @@ Render-ready backend for the Solviva calculator.
 - `VITE_SUPERADMIN_PASSWORD`
 - `VITE_ENGINEERING_PASSWORD`
 - `VITE_PRODUCT_PASSWORD`
+- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY` — the Odoo JSON-RPC credential used by `/api/crm-contact` and `/api/odoo/quotation`. Point staging at the Odoo.sh staging build; its API keys are wiped when the build is neutralised, so generate a key on the staging build itself.
+- `ODOO_TIMEOUT_MS` (optional, default `8000`)
 
 Successful parameter saves are recorded in `parameter_audit_events` with the
 verified actor, role, timestamp, source, complete before/after payloads, and a
