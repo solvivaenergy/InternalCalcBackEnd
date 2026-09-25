@@ -207,6 +207,23 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
   const caller = await resolveCaller(accessToken);
   if (caller.error) return { status: caller.status, payload: { error: caller.error } };
 
+  // WRITE PATH IS OPT-IN. The ODOO_* credential is shared with the read-only
+  // lead lookup, and on 2026-09-25 the Render STAGING service turned out to
+  // hold the PRODUCTION credential — a staging test created a quotation in
+  // production. Creating quotations therefore requires an explicit
+  // ODOO_QUOTATION_ENABLED=true on the server, set only where the credential
+  // is known to point at the intended database.
+  if (String(process.env.ODOO_QUOTATION_ENABLED || "").toLowerCase() !== "true") {
+    console.warn("[odoo-quotation] push disabled (ODOO_QUOTATION_ENABLED is not 'true')", { requestId });
+    return {
+      status: 503,
+      payload: {
+        error: "Saving quotations to Odoo is switched off on this server.",
+        code: "push_disabled",
+      },
+    };
+  }
+
   const cfg = odooConfig();
   if (!cfg) {
     console.error("[odoo-quotation] odoo not configured", { requestId, missing: missingOdooEnv() });

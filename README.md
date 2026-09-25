@@ -26,6 +26,7 @@ Render-ready backend for the Solviva calculator.
 - `VITE_ENGINEERING_PASSWORD`
 - `VITE_PRODUCT_PASSWORD`
 - `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY` — the Odoo JSON-RPC credential used by `/api/crm-contact` and `/api/odoo/quotation`. Point staging at the Odoo.sh staging build; its API keys are wiped when the build is neutralised, so generate a key on the staging build itself.
+- `ODOO_QUOTATION_ENABLED` — must be exactly `true` for `/api/odoo/quotation` to create quotations; anything else answers `503 push_disabled`. Set it only on a service whose `ODOO_*` credential is confirmed to point at the intended database (the lead lookup is read-only, the quotation push is not).
 - `ODOO_TIMEOUT_MS` (optional, default `8000`)
 
 Successful parameter saves are recorded in `parameter_audit_events` with the

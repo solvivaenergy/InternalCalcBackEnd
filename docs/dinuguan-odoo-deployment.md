@@ -62,13 +62,16 @@ Open for review after staging: the **quantity rules** in `InternalCalcFrontEnd/s
 | Render backend | `ODOO_URL` | `https://solvivaenergy-sh-new-erp-staging-37792153.dev.odoo.com` | `https://solvivaenergy-sh.odoo.com` |
 | Render backend | `ODOO_DB` | `solvivaenergy-sh-new-erp-staging-37792153` | `solvivaenergy-solviva-odoo-v18-main-30096417` |
 | Render backend | `ODOO_USER` / `ODOO_API_KEY` | admin + a key generated **on the staging build** | already set (043D) |
+| Render backend | `ODOO_QUOTATION_ENABLED` | `true` **only after** the `ODOO_*` variables point at the staging build | `true` at step 2 of the production plan |
 | Odoo | `internal_calculator.base_url` | `https://staging-internalcalc.solvivaenergy.com` | `https://internalcalc.solvivaenergy.com` (confirm the production hostname) |
 
 The frontend needs no new variables: it reuses `VITE_API_BASE_URL`.
 
+> **Why the opt-in flag exists.** On 2026-09-25 the Render staging service was found to carry the **production** Odoo credential (the read-only lead lookup had been sharing it since 043D). An authenticated staging probe therefore created quotation S00062 in production; it was deleted the same minute. The quotation route now refuses to write unless `ODOO_QUOTATION_ENABLED=true`, so re-pointing `ODOO_*` at staging and enabling the flag are two deliberate steps.
+
 ## Staging run-book
 
-1. Generate an API key for `admin@solvivaenergy.com` on the staging build and put it in `.env.staging` (`ODOO_API_KEY=`) and in the Render staging service.
+1. Generate an API key for `admin@solvivaenergy.com` on the staging build and put it in `.env.staging` (`ODOO_API_KEY=`) and in the Render staging service. **Replace all four `ODOO_*` variables on Render** (they currently point at production), then set `ODOO_QUOTATION_ENABLED=true` there.
 2. Dry run, then apply:
    ```powershell
    node scripts/odoo/apply-dinuguan.mjs --env-file .env.staging --calculator-url https://staging-internalcalc.solvivaenergy.com
@@ -90,7 +93,7 @@ The frontend needs no new variables: it reuses `VITE_API_BASE_URL`.
 Order matters: the Odoo records first, then the backend, then the frontend, and 064L last.
 
 1. **Odoo, without 064L** — `node scripts/odoo/apply-dinuguan.mjs --env-file .env --allow-prod --calculator-url https://internalcalc.solvivaenergy.com --skip 064L --yes`, then `verify-dinuguan.mjs --env-file .env --allow-prod --lead-id <a real opportunity>`. Commit the production manifest.
-2. **Backend** — merge `staging` → `main`; Render already holds the production `ODOO_*` variables.
+2. **Backend** — merge `staging` → `main`; Render already holds the production `ODOO_*` variables. Add `ODOO_QUOTATION_ENABLED=true` to the production service.
 3. **Frontend** — merge `staging` → `main`; production publishes through Cloudflare (not the GitHub Action).
 4. **Smoke** — one real opportunity end to end (button → calculator → PDF → quotation).
 5. **064L** — once Sales confirms the flow: `apply-dinuguan.mjs --env-file .env --allow-prod --only 064L --yes`.
