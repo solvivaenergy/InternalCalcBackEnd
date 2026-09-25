@@ -24,7 +24,7 @@ Odoo instance facts that shaped the design (verified 2026-09-25 over JSON-RPC):
 | Hide "New Quotation" for | Everyone, Finance and Admin included. |
 | 064E monthly figure | The calculator's own amortisation, which already nets out the down payment. |
 
-Open for review after staging: the **quantity rules** in `InternalCalcFrontEnd/src/lib/boq.js` (counts for panels, batteries, racks, inverters, 2F rows and RSD; metres for excess cable; one lot for every bundled line), and the **product type** of the three package products (created as Goods to match the existing "Solar PV System NkWp" products, so a confirmed order raises a delivery).
+Open for review after staging: the **quantity rules** in `InternalCalcFrontEnd/src/lib/boq.js` (counts for panels, batteries, racks, inverters, 2F rows and RSD; metres for excess cable; one lot for every bundled line), and the **product type** of the three package products. The apply script creates them as Goods in *Solar System* to match the existing "Solar PV System NkWp" products, so a confirmed order raises a delivery. On the staging build, *A. Solar Package* (id 412) and *B. Battery Package* (id 413) already existed as **Services** in category *All* when the script ran on 2026-09-25, so the script reused them and created only *C* as Goods. Decide one type before production and align all three (the script does not change existing products).
 
 ## What changed
 

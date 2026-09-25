@@ -166,22 +166,27 @@ async function resolveCaller(accessToken) {
 // fields_get once per process per database; the custom fields only appear
 // after the apply script runs, and a stale negative result self-heals on the
 // next TTL expiry.
-let fieldsCache = { key: "", at: 0, fields: null };
+let fieldsCache = { key: "", at: 0, fields: null, ttl: 0 };
 const FIELDS_TTL_MS = 10 * 60 * 1000;
+// A NEGATIVE answer (custom fields absent) is cached only briefly: the apply
+// script may run at any moment, and on 2026-09-25 the staging service kept
+// reporting the fields missing for minutes after they existed.
+const FIELDS_MISSING_TTL_MS = 30 * 1000;
 
 async function fieldsAvailable(cfg, signal) {
   const key = `${cfg.url}|${cfg.db}`;
-  if (fieldsCache.fields && fieldsCache.key === key && Date.now() - fieldsCache.at < FIELDS_TTL_MS) {
+  if (fieldsCache.fields && fieldsCache.key === key && Date.now() - fieldsCache.at < fieldsCache.ttl) {
     return fieldsCache.fields;
   }
   const res = await executeKw(cfg, "sale.order", "fields_get", [], { attributes: ["type"] }, signal);
   const fields = new Set(Object.keys(res || {}));
-  fieldsCache = { key, at: Date.now(), fields };
+  const complete = fields.has("x_boq_line_ids") && CALC_FIELD_MAP.every(([f]) => fields.has(f));
+  fieldsCache = { key, at: Date.now(), fields, ttl: complete ? FIELDS_TTL_MS : FIELDS_MISSING_TTL_MS };
   return fields;
 }
 
 export function resetOdooQuotationCaches() {
-  fieldsCache = { key: "", at: 0, fields: null };
+  fieldsCache = { key: "", at: 0, fields: null, ttl: 0 };
 }
 
 // ─── Date arithmetic for the subscription end date ───────────────────────────
@@ -389,12 +394,15 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
           (isDirect ? "" : `, monthly ₱${num(q.monthlyPayment).toLocaleString("en-PH")}, total due ₱${num(q.totalAmountDueInclDst).toLocaleString("en-PH")}`) + ".",
         `Bill of Quantities rows: ${boq.length}.`,
       ];
+      // Odoo 18 escapes `body` unless body_is_html is set (a plain string is
+      // never trusted as markup over RPC). Without it the note shows literal
+      // "&lt;p&gt;" tags — seen on the staging quotation S00066.
       await executeKw(
         cfg,
         "sale.order",
         "message_post",
         [[orderId]],
-        { body: lines.map((l) => `<p>${l}</p>`).join(""), message_type: "comment", subtype_xmlid: "mail.mt_note" },
+        { body: lines.map((l) => `<p>${l}</p>`).join(""), body_is_html: true, message_type: "comment", subtype_xmlid: "mail.mt_note" },
         signal,
       );
     } catch (err) {

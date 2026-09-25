@@ -1,0 +1,455 @@
+{
+  "db": "solvivaenergy-sh-new-erp-staging-37792153",
+  "url": "https://solvivaenergy-sh-new-erp-staging-37792153.dev.odoo.com",
+  "created": [
+    {
+      "model": "product.template",
+      "id": 412,
+      "key": "A. Solar Package",
+      "step": "064G",
+      "created": false,
+      "at": "2026-09-25T11:20:09.122Z"
+    },
+    {
+      "model": "product.template",
+      "id": 413,
+      "key": "B. Battery Package",
+      "step": "064G",
+      "created": false,
+      "at": "2026-09-25T11:20:09.166Z"
+    },
+    {
+      "model": "product.template",
+      "id": 416,
+      "key": "C. Misc. Materials, Labor, Services & Other Adjustments",
+      "step": "064G",
+      "created": true,
+      "at": "2026-09-25T11:20:26.554Z"
+    },
+    {
+      "model": "ir.model",
+      "id": 1386,
+      "key": "x_boq_line",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:28.371Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24047,
+      "key": "x_boq_line.x_name",
+      "step": "064I",
+      "created": false,
+      "at": "2026-09-25T11:20:28.842Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24055,
+      "key": "x_boq_line.x_sale_order_id",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:29.885Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24057,
+      "key": "x_boq_line.x_sequence",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:31.165Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24059,
+      "key": "x_boq_line.x_package",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:32.610Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24061,
+      "key": "x_boq_line.x_product",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:33.994Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24063,
+      "key": "x_boq_line.x_quantity",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:35.359Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24065,
+      "key": "x_boq_line.x_unit",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:36.755Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1833,
+      "key": "x_boq_line_user",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:37.445Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24067,
+      "key": "sale.order.x_boq_line_ids",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:39.122Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5350,
+      "key": "Internal Calculator: sale.order Bill of Quantities page",
+      "step": "064I",
+      "created": true,
+      "at": "2026-09-25T11:20:40.155Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24069,
+      "key": "sale.order.x_calc_proposal_ref",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:41.305Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24071,
+      "key": "sale.order.x_calc_generated_at",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:42.829Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24073,
+      "key": "sale.order.x_calc_financing_type",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:44.378Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24075,
+      "key": "sale.order.x_calc_net_price",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:46.177Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24077,
+      "key": "sale.order.x_calc_discount_amount",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:47.801Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24079,
+      "key": "sale.order.x_calc_promo_code",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:49.389Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24081,
+      "key": "sale.order.x_calc_downpayment_pct",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:50.939Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24083,
+      "key": "sale.order.x_calc_downpayment_amount",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:52.530Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24085,
+      "key": "sale.order.x_calc_tenor_months",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:54.119Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24087,
+      "key": "sale.order.x_calc_interest_rate_pa",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:55.726Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24089,
+      "key": "sale.order.x_calc_monthly_amortization",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:57.097Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24091,
+      "key": "sale.order.x_calc_total_amount_due",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:58.450Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24093,
+      "key": "sale.order.x_calc_dst",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:20:59.752Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24095,
+      "key": "sale.order.x_calc_total_amount_due_incl_dst",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:01.045Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24097,
+      "key": "sale.order.x_calc_system_kwp",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:02.506Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24099,
+      "key": "sale.order.x_calc_panel_count",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:04.170Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24101,
+      "key": "sale.order.x_calc_battery_kwh",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:05.783Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24103,
+      "key": "sale.order.x_calc_inverters",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:07.330Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24105,
+      "key": "sale.order.x_calc_agent_email",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:08.782Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5351,
+      "key": "Internal Calculator: sale.order calculator figures page",
+      "step": "064E",
+      "created": true,
+      "at": "2026-09-25T11:21:09.454Z"
+    },
+    {
+      "model": "ir.config_parameter",
+      "id": 98,
+      "key": "internal_calculator.base_url",
+      "step": "064B",
+      "created": true,
+      "at": "2026-09-25T11:21:10.204Z"
+    },
+    {
+      "model": "ir.actions.server",
+      "id": 1761,
+      "key": "Internal Calculator: Generate Proposal",
+      "step": "064B",
+      "created": true,
+      "at": "2026-09-25T11:21:10.737Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5352,
+      "key": "Internal Calculator: crm.lead Generate Proposal button",
+      "step": "064B",
+      "created": true,
+      "at": "2026-09-25T11:21:11.817Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5353,
+      "key": "Internal Calculator: crm.lead hide New Quotation",
+      "step": "064L",
+      "created": true,
+      "at": "2026-09-25T11:21:11.968Z"
+    }
+  ],
+  "modified": [
+    {
+      "model": "ir.actions.server",
+      "id": 1528,
+      "field": "code",
+      "before": "# Available variables:\n#  - env: environment on which the action is triggered\n#  - model: model of the record on which the action is triggered; is a void recordset\n#  - record: record on which the action is triggered; may be void\n#  - records: recordset of all records on which the action is triggered in multi-mode; may be void\n#  - time, datetime, dateutil, timezone: useful Python libraries\n#  - float_compare: utility function to compare floats based on specific precision\n#  - b64encode, b64decode: functions to encode/decode binary data\n#  - log: log(message, level='info'): logging function to record debug information in ir.logging table\n#  - _logger: _logger.info(message): logger to emit messages in server logs\n#  - UserError: exception class for raising user-facing warning messages\n#  - Command: x2many commands namespace\n# To return an action, assign: action = {...}\n\n# We use the pre-loaded dateutil, so no 'import' statement is needed!\n\nif record.payment_term_id:\n    term_name = record.payment_term_id.name.lower()\n    \n    # SCENARIO A: Direct Purchase\n    if 'direct' in term_name:\n        # Use .update() instead of the equals sign to bypass the STORE_ATTR error\n        record.update({\n            'plan_id': False,\n            'end_date': False\n        })\n        \n    # SCENARIO B: Rent-to-Own\n    else:\n        # Figure out how many months based on the payment term name\n        months_to_add = 0\n        if '6' in term_name: months_to_add = 6\n        elif '12' in term_name: months_to_add = 12\n        elif '24' in term_name: months_to_add = 24\n        elif '36' in term_name: months_to_add = 36\n        elif '48' in term_name: months_to_add = 48\n        elif '60' in term_name: months_to_add = 60\n        \n        if months_to_add > 0:\n            vals_to_update = {}\n            \n            # 1. Apply the Monthly plan\n            if not record.plan_id:\n                monthly_plan = env['sale.subscription.plan'].search([\n                    ('billing_period_value', '=', 1), \n                    ('billing_period_unit', '=', 'month')\n                ], limit=1)\n                \n                if monthly_plan:\n                    vals_to_update['plan_id'] = monthly_plan.id\n                    \n            # 2. Set the end date using the pre-loaded dateutil library\n            if record.date_order:\n                vals_to_update['end_date'] = record.date_order + dateutil.relativedelta.relativedelta(months=months_to_add)\n            \n            # Apply all updates at once safely\n            if vals_to_update:\n                record.update(vals_to_update)",
+      "after": "# internal_calculator:064E — managed by InternalCalcBackEnd/scripts/odoo/apply-dinuguan.mjs.\n# Edit the script and re-apply rather than editing here; rollback restores the\n# previous code from the manifest.\n#\n# 1. Direct Purchase clears the recurring plan and end date.\n# 2. Rent-to-Own: the tenor comes from the calculator (x_calc_tenor_months)\n#    when present, else from the FIRST number in the payment-term name.\n# 3. The recurring line is anchored on the calculator's own monthly\n#    amortisation, which already nets out the down payment and carries the\n#    interest, so the bill schedule bills exactly what the proposal printed.\n\nterm = record.payment_term_id\nterm_name = (term.name or '').lower() if term else ''\nis_direct = 'direct' in term_name\n\nif term:\n    if is_direct:\n        record.update({'plan_id': False, 'end_date': False})\n    else:\n        months = int(record.x_calc_tenor_months or 0)\n        if months <= 0:\n            digits = ''\n            for ch in term_name:\n                digits += ch if ch.isdigit() else ' '\n            parts = digits.split()\n            months = int(parts[0]) if parts else 0\n        if months > 0:\n            vals = {}\n            if not record.plan_id:\n                plan = env['sale.subscription.plan'].search([('name', '=ilike', 'Monthly Rent-to-Own')], limit=1)\n                if not plan:\n                    plan = env['sale.subscription.plan'].search([\n                        ('billing_period_value', '=', 1),\n                        ('billing_period_unit', '=', 'month'),\n                    ], limit=1)\n                if plan:\n                    vals['plan_id'] = plan.id\n            if record.date_order:\n                vals['end_date'] = record.date_order + dateutil.relativedelta.relativedelta(months=months)\n            if vals:\n                record.update(vals)\n\namort = record.x_calc_monthly_amortization or 0.0\nif amort > 0 and not is_direct:\n    recurring = record.order_line.filtered(lambda l: l.recurring_invoice and not l.display_type)\n    if len(recurring) == 1 and abs(recurring.price_unit - amort) > 0.005:\n        recurring.update({'price_unit': amort})\n",
+      "step": "064E",
+      "at": "2026-09-25T11:21:09.538Z"
+    }
+  ],
+  "steps": {
+    "064G": {
+      "lastRun": "2026-09-25T11:20:26.554Z",
+      "applied": true
+    },
+    "064I": {
+      "lastRun": "2026-09-25T11:20:40.155Z",
+      "applied": true
+    },
+    "064E": {
+      "lastRun": "2026-09-25T11:21:09.587Z",
+      "applied": true
+    },
+    "064B": {
+      "lastRun": "2026-09-25T11:21:11.817Z",
+      "applied": true
+    },
+    "064L": {
+      "lastRun": "2026-09-25T11:21:11.968Z",
+      "applied": true
+    }
+  },
+  "runs": [
+    {
+      "at": "2026-09-25T11:20:08.971Z",
+      "steps": [
+        "064G",
+        "064I",
+        "064E",
+        "064B",
+        "064L"
+      ],
+      "apply": false,
+      "calculatorUrl": "https://staging-internalcalc.solvivaenergy.com",
+      "actions": [
+        "064G — package products",
+        "  category: Solar System (id 19)",
+        "  = product.template \"A. Solar Package\" exists (id 412)",
+        "  = product.template \"B. Battery Package\" exists (id 413)",
+        "  + would create product.template \"C. Misc. Materials, Labor, Services & Other Adjustments\" — IC-PKG-C",
+        "064I — Bill of Quantities table",
+        "  + would create ir.model \"x_boq_line\" — manual model",
+        "  (fields, access rule and page follow once the model exists)",
+        "064E — calculator figures + bill-schedule automation",
+        "  + would create ir.model.fields \"sale.order.x_calc_proposal_ref\" — char",
+        "  + would create ir.model.fields \"sale.order.x_calc_generated_at\" — datetime",
+        "  + would create ir.model.fields \"sale.order.x_calc_financing_type\" — char",
+        "  + would create ir.model.fields \"sale.order.x_calc_net_price\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_discount_amount\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_promo_code\" — char",
+        "  + would create ir.model.fields \"sale.order.x_calc_downpayment_pct\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_downpayment_amount\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_tenor_months\" — integer",
+        "  + would create ir.model.fields \"sale.order.x_calc_interest_rate_pa\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_monthly_amortization\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_total_amount_due\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_dst\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_total_amount_due_incl_dst\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_system_kwp\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_panel_count\" — integer",
+        "  + would create ir.model.fields \"sale.order.x_calc_battery_kwh\" — float",
+        "  + would create ir.model.fields \"sale.order.x_calc_inverters\" — char",
+        "  + would create ir.model.fields \"sale.order.x_calc_agent_email\" — char",
+        "  (figures page follows once the fields exist)",
+        "  ! fields not created yet (dry run?) — the automation code references them, so it is updated only in the same --yes run",
+        "  ~ would replace the code of server action 1528 (\"Execute Code\")",
+        "064B — Generate Proposal button",
+        "  + would create ir.config_parameter \"internal_calculator.base_url\" — https://staging-internalcalc.solvivaenergy.com",
+        "  + would create ir.actions.server \"Internal Calculator: Generate Proposal\" — code action returning ir.actions.act_url",
+        "  (button view follows once the action exists)",
+        "064L — hide New Quotation on the opportunity",
+        "  + would create ir.ui.view \"Internal Calculator: crm.lead hide New Quotation\" — inherits view 2820"
+      ]
+    },
+    {
+      "at": "2026-09-25T11:20:26.149Z",
+      "steps": [
+        "064G",
+        "064I",
+        "064E",
+        "064B",
+        "064L"
+      ],
+      "apply": true,
+      "calculatorUrl": "https://staging-internalcalc.solvivaenergy.com",
+      "actions": [
+        "064G — package products",
+        "  category: Solar System (id 19)",
+        "  = product.template \"A. Solar Package\" exists (id 412)",
+        "  = product.template \"B. Battery Package\" exists (id 413)",
+        "  + created product.template \"C. Misc. Materials, Labor, Services & Other Adjustments\" (id 416)",
+        "064I — Bill of Quantities table",
+        "  + created ir.model \"x_boq_line\" (id 1386)",
+        "  = ir.model.fields \"x_boq_line.x_name\" exists (id 24047)",
+        "  + created ir.model.fields \"x_boq_line.x_sale_order_id\" (id 24055)",
+        "  + created ir.model.fields \"x_boq_line.x_sequence\" (id 24057)",
+        "  + created ir.model.fields \"x_boq_line.x_package\" (id 24059)",
+        "  + created ir.model.fields \"x_boq_line.x_product\" (id 24061)",
+        "  + created ir.model.fields \"x_boq_line.x_quantity\" (id 24063)",
+        "  + created ir.model.fields \"x_boq_line.x_unit\" (id 24065)",
+        "  + created ir.model.access \"x_boq_line_user\" (id 1833)",
+        "  + created ir.model.fields \"sale.order.x_boq_line_ids\" (id 24067)",
+        "  + created ir.ui.view \"Internal Calculator: sale.order Bill of Quantities page\" (id 5350)",
+        "064E — calculator figures + bill-schedule automation",
+        "  + created ir.model.fields \"sale.order.x_calc_proposal_ref\" (id 24069)",
+        "  + created ir.model.fields \"sale.order.x_calc_generated_at\" (id 24071)",
+        "  + created ir.model.fields \"sale.order.x_calc_financing_type\" (id 24073)",
+        "  + created ir.model.fields \"sale.order.x_calc_net_price\" (id 24075)",
+        "  + created ir.model.fields \"sale.order.x_calc_discount_amount\" (id 24077)",
+        "  + created ir.model.fields \"sale.order.x_calc_promo_code\" (id 24079)",
+        "  + created ir.model.fields \"sale.order.x_calc_downpayment_pct\" (id 24081)",
+        "  + created ir.model.fields \"sale.order.x_calc_downpayment_amount\" (id 24083)",
+        "  + created ir.model.fields \"sale.order.x_calc_tenor_months\" (id 24085)",
+        "  + created ir.model.fields \"sale.order.x_calc_interest_rate_pa\" (id 24087)",
+        "  + created ir.model.fields \"sale.order.x_calc_monthly_amortization\" (id 24089)",
+        "  + created ir.model.fields \"sale.order.x_calc_total_amount_due\" (id 24091)",
+        "  + created ir.model.fields \"sale.order.x_calc_dst\" (id 24093)",
+        "  + created ir.model.fields \"sale.order.x_calc_total_amount_due_incl_dst\" (id 24095)",
+        "  + created ir.model.fields \"sale.order.x_calc_system_kwp\" (id 24097)",
+        "  + created ir.model.fields \"sale.order.x_calc_panel_count\" (id 24099)",
+        "  + created ir.model.fields \"sale.order.x_calc_battery_kwh\" (id 24101)",
+        "  + created ir.model.fields \"sale.order.x_calc_inverters\" (id 24103)",
+        "  + created ir.model.fields \"sale.order.x_calc_agent_email\" (id 24105)",
+        "  + created ir.ui.view \"Internal Calculator: sale.order calculator figures page\" (id 5351)",
+        "  ~ replaced the code of server action 1528 (previous code saved in the manifest)",
+        "064B — Generate Proposal button",
+        "  + created ir.config_parameter \"internal_calculator.base_url\" (id 98)",
+        "  + created ir.actions.server \"Internal Calculator: Generate Proposal\" (id 1761)",
+        "  + created ir.ui.view \"Internal Calculator: crm.lead Generate Proposal button\" (id 5352)",
+        "064L — hide New Quotation on the opportunity",
+        "  + created ir.ui.view \"Internal Calculator: crm.lead hide New Quotation\" (id 5353)"
+      ]
+    }
+  ]
+}
