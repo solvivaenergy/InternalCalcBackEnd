@@ -8,6 +8,7 @@ import {
   getParameters,
   putParameters,
   getAuditEvents,
+  verifySession,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
 import { createQuotationFromProposal } from "./src/odooQuotationService.js";
@@ -17,27 +18,53 @@ import {
   updateUser,
   setUserArchived,
 } from "./src/usersService.js";
+import { rateLimit } from "./src/rateLimit.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
-const allowedOrigins = (process.env.CORS_ORIGINS || "*")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+
+// Render terminates TLS and forwards the caller's address in X-Forwarded-For.
+// Trusting that one hop makes req.ip the caller rather than Render's proxy,
+// which is what the rate limiter keys on.
+app.set("trust proxy", 1);
+
+// CORS (2026-09-27). A browser on a listed origin may call the API; a page on
+// any other origin gets no Access-Control-Allow-Origin header and the browser
+// blocks the response. Unset used to mean "*" — any website could script calls
+// against this service, and both Render services ran that way. Unset now
+// means the calculator's own origins (below), so a service with no
+// CORS_ORIGINS configured is locked to the two deployed frontends and the
+// Vite dev server (DEVELOPER_SETUP.md points local dev at the staging backend).
+// Setting CORS_ORIGINS replaces that list; "*" allows all and is what
+// dev-server.js uses. Non-browser callers (curl, a server-side fetch from a
+// Worker) are unaffected: CORS is enforced by browsers, not by this server.
+const DEFAULT_ORIGINS = [
+  "https://internalcalc.solvivaenergy.com",
+  "https://staging-internalcalc.solvivaenergy.com",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+const corsOriginsRaw = process.env.CORS_ORIGINS;
+const allowedOrigins = corsOriginsRaw
+  ? corsOriginsRaw
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  : DEFAULT_ORIGINS;
+const allowAnyOrigin = allowedOrigins.includes("*");
+console.log(
+  `[cors] ${corsOriginsRaw ? "CORS_ORIGINS" : "built-in default"}: ${allowedOrigins.join(", ")}`,
+);
 
 app.use(express.json({ limit: "1mb" }));
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (
-    allowedOrigins.includes("*") ||
-    (origin && allowedOrigins.includes(origin))
-  ) {
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      allowedOrigins.includes("*") ? "*" : origin,
-    );
-    res.setHeader("Vary", "Origin");
+  res.setHeader("Vary", "Origin");
+  if (allowAnyOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  } else if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, OPTIONS");
   res.setHeader(
@@ -50,12 +77,41 @@ app.use((req, res, next) => {
   next();
 });
 
+// Every /api route: RATE_LIMIT_MAX requests per RATE_LIMIT_WINDOW_SECONDS per
+// client address, 429 beyond that. The calculator makes a handful of calls per
+// session; the cap exists so a script cannot hammer routes that reach Supabase
+// or Odoo on every call.
+app.use(
+  "/api",
+  rateLimit({
+    max: Number(process.env.RATE_LIMIT_MAX) || 120,
+    windowMs: (Number(process.env.RATE_LIMIT_WINDOW_SECONDS) || 60) * 1000,
+  }),
+);
+
+const bearerToken = (req) => {
+  const authHeader = req.headers["authorization"] || "";
+  return authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+};
+
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// The original server-side quote (2026-07-07). Nothing calls it today — the
+// calculator runs its own engine in the browser and this copy has fallen
+// behind it — but it was reachable by anyone and read the parameters row
+// through the service-role key on every call. It now needs a signed-in user
+// like every other /api route. Slated for removal once the engine is shared
+// with the backend.
 app.post("/api/quote", async (req, res) => {
   try {
+    const session = await verifySession(bearerToken(req));
+    if (session.error) {
+      return res.status(session.status).json({ error: session.error });
+    }
     const payload =
       req.body && typeof req.body === "object" && !Array.isArray(req.body)
         ? req.body.input && typeof req.body.input === "object"
@@ -72,66 +128,56 @@ app.post("/api/quote", async (req, res) => {
     const result = await buildQuote(payload);
     return res.status(200).json(result);
   } catch (error) {
-    return res.status(500).json({
-      error: "Failed to generate quote.",
-      detail: String(error?.message || error),
-    });
+    // No `detail`: a Supabase fault names the table and the query.
+    console.error("[quote] failed", error);
+    return res.status(500).json({ error: "Failed to generate quote." });
   }
 });
 
-app.get("/api/parameters", async (_req, res) => {
+// The full parameters row — COGS, margin curves and promo codes included,
+// because the calculator derives its selling prices from them in the browser.
+// Public until 2026-09-27; now needs a signed-in Supabase user, the same rule
+// as the direct PostgREST read the frontend falls back to (migration
+// 20260922_app_parameters_authenticated_read.sql).
+app.get("/api/parameters", async (req, res) => {
   try {
-    const data = await getParameters();
-    return res.status(200).json(data || {});
+    const result = await getParameters(bearerToken(req));
+    return res.status(result.status).json(result.payload);
   } catch (error) {
-    return res.status(500).json({
-      error: "Failed to load parameters.",
-      detail: String(error?.message || error),
-    });
+    console.error("[parameters] load failed", error);
+    return res.status(500).json({ error: "Failed to load parameters." });
   }
 });
 
 app.get("/api/parameter-audit", async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"] || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : "";
     const claimedRole = req.headers["x-solviva-role"] || "";
     const result = await getAuditEvents(
-      accessToken,
+      bearerToken(req),
       claimedRole,
       req.query.limit,
     );
     return res.status(result.status).json(result.payload);
   } catch (error) {
-    return res.status(500).json({
-      error: "Failed to load audit history.",
-      detail: String(error?.message || error),
-    });
+    console.error("[parameter-audit] load failed", error);
+    return res.status(500).json({ error: "Failed to load audit history." });
   }
 });
 
 app.put("/api/parameters", async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"] || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : "";
     const claimedRole = req.headers["x-solviva-role"] || "";
     const requestId = randomUUID();
     const result = await putParameters(
       req.body,
-      accessToken,
+      bearerToken(req),
       claimedRole,
       requestId,
     );
     return res.status(result.status).json(result.payload);
   } catch (error) {
-    return res.status(500).json({
-      error: "Failed to save parameters.",
-      detail: String(error?.message || error),
-    });
+    console.error("[parameters] save failed", error);
+    return res.status(500).json({ error: "Failed to save parameters." });
   }
 });
 
@@ -145,15 +191,11 @@ app.put("/api/parameters", async (req, res) => {
 // Supabase JWT.
 app.get("/api/crm-contact", async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"] || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : "";
-    const result = await getCrmContact(req.query.projectNumber, accessToken);
+    const result = await getCrmContact(req.query.projectNumber, bearerToken(req));
     return res.status(result.status).json(result.payload);
   } catch (error) {
-    // No `detail` here, unlike the routes above: an Odoo fault message carries
-    // a traceback plus the database name and the integration username.
+    // No `detail` here: an Odoo fault message carries a traceback plus the
+    // database name and the integration username.
     console.error("[crm-contact] unexpected", error);
     return res.status(500).json({ error: "CRM lookup failed." });
   }
@@ -163,13 +205,6 @@ app.get("/api/crm-contact", async (req, res) => {
 // Supabase JWT server-side and requires user_roles.role = 'admin'
 // (src/usersService.js); x-solviva-role is deliberately not read. Registered
 // BEFORE the catch-all.
-const bearerToken = (req) => {
-  const authHeader = req.headers["authorization"] || "";
-  return authHeader.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : "";
-};
-
 app.get("/api/users", async (req, res) => {
   try {
     const result = await listUsers(bearerToken(req));

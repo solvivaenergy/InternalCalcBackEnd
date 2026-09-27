@@ -629,11 +629,22 @@ export async function verifySession(accessToken) {
   return { userId: data.user.id };
 }
 
-export async function getParameters() {
+// Any signed-in user may read the row (2026-09-27; it was public before).
+// Returns { status, payload } like putParameters so server.js treats the two
+// alike. Local JSON mode skips the check: the frontend's local fallback
+// session cannot mint a Supabase JWT, and that mode is already refused
+// outside NODE_ENV=development.
+export async function getParameters(accessToken) {
   assertLocalJsonStorage();
-  if (isLocalJsonStorage()) return await readLocalJsonPayload();
+  if (isLocalJsonStorage()) {
+    return { status: 200, payload: await readLocalJsonPayload() };
+  }
+  const session = await verifySession(accessToken);
+  if (session.error) {
+    return { status: session.status, payload: { error: session.error } };
+  }
   const supabase = getSupabaseClient();
-  return await readCurrentPayload(supabase);
+  return { status: 200, payload: await readCurrentPayload(supabase) };
 }
 
 export async function putParameters(

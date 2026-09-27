@@ -1,5 +1,69 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-09-27 — Lock down the API ahead of a public calculator endpoint
+
+### Scope
+
+- `GET /api/parameters` now requires a signed-in Supabase user (any role).
+  It returned the whole row — COGS, margin curves, promo codes — to anyone.
+  Same rule as the frontend's PostgREST fallback read (20260922 migration).
+- `POST /api/quote` now requires a signed-in user. Unused by the frontend and
+  behind the browser engine, but it was public and read the parameters row
+  through the service-role key per call.
+- CORS: `CORS_ORIGINS` unset now means the calculator's own origins
+  (prod, staging, `localhost:5173`) instead of `*`. Both Render services
+  were running on the `*` default, so this deploys with no env change and
+  no disruption. Setting the variable replaces the built-in list. `npm run
+  dev` defaults to `*` because Vite and the backend are different local
+  origins.
+- Rate limit on `/api/*`: 120 requests / 60 s per client address (in-memory,
+  `src/rateLimit.js`), `429` + `Retry-After` beyond that. `trust proxy` set
+  so `req.ip` is the caller behind Render.
+- 500 responses on `/api/quote`, `GET|PUT /api/parameters` and
+  `/api/parameter-audit` no longer echo `error.message` (Supabase faults name
+  tables and queries); logged server-side instead, as the newer routes do.
+
+### Files touched
+
+- `server.js`, `src/parametersService.js` (`getParameters(accessToken)` →
+  `{ status, payload }`), `src/rateLimit.js` (new), `dev-server.js`,
+  `README.md`.
+- Frontend: `src/lib/paramsService.js` — `loadFromBackend()` sends
+  `Authorization: Bearer <session JWT>`.
+
+### Contract changes
+
+- `GET /api/parameters` and `POST /api/quote`: `401` without a valid JWT.
+  The frontend already only loads parameters after sign-in; a frontend
+  built before this change gets `401` from the backend and falls through to
+  its Supabase direct read, so parameters still load — deploy the frontend
+  change alongside anyway so the backend path is the one that serves.
+- Any `/api/*` route: `429` when a client exceeds the cap.
+
+### Data changes
+
+- None.
+
+### Validation
+
+- `node --check` on every touched file.
+- Scripted run against the staging project (throwaway user, deleted after):
+  `401` without / with a bogus token, `200` with a real JWT and the payload
+  carries `adminParams`; `POST /api/quote` `401`; foreign `Origin` gets no
+  `Access-Control-Allow-Origin`, the listed one is echoed; `429` after the
+  cap with `Retry-After`.
+
+### Deployment notes
+
+- No env change required. Optional: `CORS_ORIGINS` (replaces the built-in
+  list), `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_SECONDS`.
+- Deploy the frontend change with it (a frontend built before this change
+  still loads parameters via its Supabase fallback, but through the slower
+  path).
+- Post-deploy: `curl -i -H "Origin: https://example.com" <backend>/health`
+  must show no `access-control-allow-origin`; `curl -i <backend>/api/parameters`
+  must answer `401`.
+
 ## 2026-09-07 — Fix phantom derived-price entries in parameter audit history
 
 ### Scope

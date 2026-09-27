@@ -4,10 +4,14 @@ Render-ready backend for the Solviva calculator.
 
 ## Endpoints
 
+Every `/api/*` route needs a signed-in Supabase user (Bearer JWT) and is rate
+limited per client address (see `RATE_LIMIT_*` below). Only `GET /health` is
+open.
+
 - `GET /health`
-- `POST /api/quote`
-- `GET /api/parameters`
-- `PUT /api/parameters`
+- `POST /api/quote` — any signed-in user. The original server-side quote; nothing calls it today and it lags the browser engine. Slated for removal once the engine is shared.
+- `GET /api/parameters` — any signed-in user. Returns the whole `app_parameters` row (COGS, margins, promo codes included — the calculator derives selling prices from them). Public until 2026-09-27.
+- `PUT /api/parameters` — role-gated per section.
 - `GET /api/users` — Super Admin only (Bearer JWT). Lists auth accounts with their resolved role.
 - `POST /api/users` — Super Admin only (Bearer JWT). Creates an account: `{ email, role, displayName?, mobile?, password? | ssoOnly: true }`. Writes `app_metadata.role`, `user_metadata` and `public.user_roles` the same way `scripts/set-user-role.mjs` does.
 - `PATCH /api/users/:id` — Super Admin only (Bearer JWT). Edits `{ role?, displayName?, mobile? }` (absent = unchanged, `null`/`""` = cleared) in the same three places. Refuses to demote the caller's own role.
@@ -20,7 +24,8 @@ Render-ready backend for the Solviva calculator.
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PORT` (optional, default `3000`)
-- `CORS_ORIGINS` (optional, comma-separated list or `*`)
+- `CORS_ORIGINS` (optional) — comma-separated list of browser origins allowed to call the API. Unset means the built-in list in `server.js`: the production and staging calculators plus the Vite dev server (`localhost:5173`). Setting it replaces that list; `*` allows all and is what `npm run dev` uses. The active list is logged at boot. Before 2026-09-27 unset meant `*`.
+- `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_SECONDS` (optional, default `120` per `60`s per client address; `/api/*` answers `429` with `Retry-After` beyond that)
 - `PARAMETERS_STORAGE` (optional; set to `local-json` only for local development)
 - `VITE_SUPERADMIN_PASSWORD`
 - `VITE_ENGINEERING_PASSWORD`
