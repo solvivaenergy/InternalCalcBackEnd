@@ -9,7 +9,6 @@ limited per client address (see `RATE_LIMIT_*` below). Only `GET /health` is
 open.
 
 - `GET /health`
-- `POST /api/quote` — any signed-in user. The original server-side quote; nothing calls it today and it lags the browser engine. Slated for removal once the engine is shared.
 - `GET /api/parameters` — any signed-in user. Returns the whole `app_parameters` row (COGS, margins, promo codes included — the calculator derives selling prices from them). Public until 2026-09-27.
 - `PUT /api/parameters` — role-gated per section.
 - `GET /api/users` — Super Admin only (Bearer JWT). Lists auth accounts with their resolved role.

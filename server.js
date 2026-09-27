@@ -3,12 +3,10 @@
 import "./src/loadEnv.js";
 import { randomUUID } from "node:crypto";
 import express from "express";
-import { buildQuote } from "./src/quoteService.js";
 import {
   getParameters,
   putParameters,
   getAuditEvents,
-  verifySession,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
 import { createQuotationFromProposal } from "./src/odooQuotationService.js";
@@ -98,40 +96,6 @@ const bearerToken = (req) => {
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
-});
-
-// The original server-side quote (2026-07-07). Nothing calls it today — the
-// calculator runs its own engine in the browser and this copy has fallen
-// behind it — but it was reachable by anyone and read the parameters row
-// through the service-role key on every call. It now needs a signed-in user
-// like every other /api route. Slated for removal once the engine is shared
-// with the backend.
-app.post("/api/quote", async (req, res) => {
-  try {
-    const session = await verifySession(bearerToken(req));
-    if (session.error) {
-      return res.status(session.status).json({ error: session.error });
-    }
-    const payload =
-      req.body && typeof req.body === "object" && !Array.isArray(req.body)
-        ? req.body.input && typeof req.body.input === "object"
-          ? req.body.input
-          : req.body
-        : null;
-
-    if (!payload) {
-      return res
-        .status(400)
-        .json({ error: "Request body must be a JSON object." });
-    }
-
-    const result = await buildQuote(payload);
-    return res.status(200).json(result);
-  } catch (error) {
-    // No `detail`: a Supabase fault names the table and the query.
-    console.error("[quote] failed", error);
-    return res.status(500).json({ error: "Failed to generate quote." });
-  }
 });
 
 // The full parameters row — COGS, margin curves and promo codes included,

@@ -1,5 +1,56 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-09-27 — `packages/calc-engine`: the calculator's engine lives here now
+
+### Scope
+
+- New workspace package `packages/calc-engine` (`@solviva/calc-engine`
+  1.0.0): the Internal Calculator's sizing/pricing engine, copied from
+  `InternalCalcFrontEnd/src/engine` at its commit `3324a7e` (where it had just
+  been lifted out of `src/lib` + `src/data` with a byte-identical parity
+  check). Pure ESM, no browser/Vite/network imports; runs in Node.
+- The backend imports it as a workspace (`workspaces` in the root
+  `package.json`; `npm install`/`npm ci` create the `node_modules/@solviva/
+  calc-engine` link). The frontend will depend on the tarball attached to
+  GitHub Release `calc-engine-v1.0.0` (new workflow `calc-engine-release.yml`,
+  triggered by pushing a `calc-engine-v*` tag).
+- `POST /api/quote` and `src/quoteService.js` REMOVED. It was a hand-ported,
+  partial copy of the engine that nothing called and that had drifted (last
+  touched 2026-08-17; the frontend engine had 12 commits since).
+- `packages/calc-engine/parity/` — the harness: `capture.mjs <engine-dir>
+  <params.json>` + `compare.mjs`. Package vs the frontend's v3-220 engine on
+  the staging row: identical.
+
+### Files touched
+
+- `packages/calc-engine/**` (new), `package.json` (workspaces),
+  `package-lock.json`, `server.js` (route + import removed),
+  `src/quoteService.js` (deleted), `.github/workflows/calc-engine-release.yml`
+  (new), `.gitignore`, `README.md`.
+
+### Contract changes
+
+- `POST /api/quote` → 404. No caller existed.
+
+### Data changes
+
+- None.
+
+### Validation
+
+- `npm install` at root links the workspace; `node --input-type=module -e
+  'import { computeProposal } from "@solviva/calc-engine"'` resolves.
+- Parity: `parity/capture.mjs packages/calc-engine <staging payload>` vs the
+  frontend's `src/engine` at v3-220 → 47/47 identical.
+- `node --check server.js`.
+
+### Deployment notes
+
+- Staging builds with `npm ci`: the committed lockfile carries the workspace
+  link. No env change.
+- After merge, tag the commit `calc-engine-v1.0.0` and push the tag; the
+  workflow attaches the tarball the frontend's `package.json` points at.
+
 ## 2026-09-27 — Lock down the API ahead of a public calculator endpoint
 
 ### Scope
