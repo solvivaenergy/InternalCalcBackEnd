@@ -9,6 +9,7 @@ limited per client address (see `RATE_LIMIT_*` below). Only `GET /health` is
 open.
 
 - `GET /health`
+- `POST /api/public/estimate` — the website calculator's numbers, from the same `@solviva/calc-engine` and the same `app_parameters` row the Internal Calculator uses. Not a user route: it needs the shared header `x-estimate-key: $PUBLIC_ESTIMATE_KEY` (the External Calculator's Cloudflare Worker holds it) and answers `503 not_configured` when the variable is unset. Body: `{ monthlyBill, appliances?: [{ name, count, onHour, offHour, daysPerWeek }] (≤7, names from the device library), utilityRate?, phase?: "single"|"three", desiredSavingsPct?, roofMaterial?, location?, locationKm?, tenor?, downPaymentPct? }`; everything else stays at the calculator's defaults. Returns `{ engineVersion, generatedAt, inputs, consumption, system, pricing, savings }` — an allowlisted projection with no COGS or margins (`src/estimateService.js`). Rate limited per visitor (`x-estimate-client-ip`, forwarded by the Worker) after the key check.
 - `GET /api/parameters` — any signed-in user. Returns the whole `app_parameters` row (COGS, margins, promo codes included — the calculator derives selling prices from them). Public until 2026-09-27.
 - `PUT /api/parameters` — role-gated per section.
 - `GET /api/users` — Super Admin only (Bearer JWT). Lists auth accounts with their resolved role.
@@ -25,6 +26,8 @@ open.
 - `PORT` (optional, default `3000`)
 - `CORS_ORIGINS` (optional) — comma-separated list of browser origins allowed to call the API. Unset means the built-in list in `server.js`: the production and staging calculators plus the Vite dev server (`localhost:5173`). Setting it replaces that list; `*` allows all and is what `npm run dev` uses. The active list is logged at boot. Before 2026-09-27 unset meant `*`.
 - `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_SECONDS` (optional, default `120` per `60`s per client address; `/api/*` answers `429` with `Retry-After` beyond that)
+- `PUBLIC_ESTIMATE_KEY` — shared secret for `POST /api/public/estimate`; the same value goes into the External Calculator Worker's secrets. Unset = the route answers `503 not_configured`. Generate with `openssl rand -hex 32`.
+- `ESTIMATE_RATE_LIMIT_PER_VISITOR` (optional, default `30` per minute per forwarded visitor address) / `ESTIMATE_RATE_LIMIT_PER_ADDRESS` (optional, default `600` per minute per calling address, applied before the key check)
 - `PARAMETERS_STORAGE` (optional; set to `local-json` only for local development)
 - `VITE_SUPERADMIN_PASSWORD`
 - `VITE_ENGINEERING_PASSWORD`

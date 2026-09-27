@@ -1,8 +1,9 @@
 // MUST stay first: loads .env relative to this repo rather than to cwd, which
 // is the frontend directory when its dev script launches this server.
 import "./src/loadEnv.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import express from "express";
+import { buildEstimate } from "./src/estimateService.js";
 import {
   getParameters,
   putParameters,
@@ -75,10 +76,60 @@ app.use((req, res, next) => {
   next();
 });
 
-// Every /api route: RATE_LIMIT_MAX requests per RATE_LIMIT_WINDOW_SECONDS per
-// client address, 429 beyond that. The calculator makes a handful of calls per
-// session; the cap exists so a script cannot hammer routes that reach Supabase
-// or Odoo on every call.
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
+// Website estimate (2026-09-27). The External Calculator's Cloudflare Worker
+// calls this with the shared PUBLIC_ESTIMATE_KEY and the visitor's address; it
+// runs the same @solviva/calc-engine pipeline the Internal Calculator runs in
+// a rep's browser and answers a customer-facing projection — no COGS, no
+// margins (src/estimateService.js). Registered BEFORE the /api limiter below,
+// which keys on req.ip: from here every website visitor would look like the
+// Worker's one address. Instead:
+//   1. a generous per-address cap bounds anyone probing the URL,
+//   2. the shared key is checked (503 when the service has no key at all, so
+//      an unconfigured deployment exposes nothing),
+//   3. then a per-visitor cap keyed on the address the Worker forwards — read
+//      only after the key check, so the header cannot be forged to dodge (1).
+const estimateKeyOk = (req) => {
+  const expected = process.env.PUBLIC_ESTIMATE_KEY || "";
+  const given = req.get("x-estimate-key") || "";
+  if (!expected || given.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+};
+app.post(
+  "/api/public/estimate",
+  rateLimit({ max: Number(process.env.ESTIMATE_RATE_LIMIT_PER_ADDRESS) || 600, windowMs: 60_000 }),
+  (req, res, next) => {
+    if (!process.env.PUBLIC_ESTIMATE_KEY) {
+      return res.status(503).json({ error: "not_configured" });
+    }
+    if (!estimateKeyOk(req)) {
+      return res.status(401).json({ error: "Invalid estimate key." });
+    }
+    next();
+  },
+  rateLimit({
+    max: Number(process.env.ESTIMATE_RATE_LIMIT_PER_VISITOR) || 30,
+    windowMs: 60_000,
+    key: (req) => req.get("x-estimate-client-ip") || req.ip,
+  }),
+  async (req, res) => {
+    try {
+      const result = await buildEstimate(req.body);
+      return res.status(result.status).json(result.payload);
+    } catch (error) {
+      console.error("[estimate] failed", error);
+      return res.status(500).json({ error: "Failed to compute the estimate." });
+    }
+  },
+);
+
+// Every other /api route: RATE_LIMIT_MAX requests per RATE_LIMIT_WINDOW_SECONDS
+// per client address, 429 beyond that. The calculator makes a handful of calls
+// per session; the cap exists so a script cannot hammer routes that reach
+// Supabase or Odoo on every call.
 app.use(
   "/api",
   rateLimit({
@@ -93,10 +144,6 @@ const bearerToken = (req) => {
     ? authHeader.slice("Bearer ".length).trim()
     : "";
 };
-
-app.get("/health", (_req, res) => {
-  res.status(200).json({ ok: true });
-});
 
 // The full parameters row — COGS, margin curves and promo codes included,
 // because the calculator derives its selling prices from them in the browser.

@@ -1,5 +1,48 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-09-27 — `POST /api/public/estimate`: the website's numbers from the shared engine
+
+### Scope
+
+- New route + `src/estimateService.js`. Runs `@solviva/calc-engine`
+  `computeProposal()` on the live `app_parameters` row (30 s cache) with the
+  website's inputs over the calculator's defaults (`defaultState`, added to
+  the engine in 1.1.0 — no computation changed, parity 47/47), and answers
+  an allowlisted, customer-facing projection: `consumption`, `system`,
+  `pricing` (net, direct purchase, rent-to-own, the tenor table, line items
+  with prices), `savings`. No COGS, no margins — a final scan refuses any body
+  that mentions either.
+- Access: shared header `x-estimate-key` = `PUBLIC_ESTIMATE_KEY` (constant-
+  time compare); unset key → `503 not_configured`. Limits: 600/min per
+  calling address before the key check, 30/min per visitor
+  (`x-estimate-client-ip`, read only after the key check) after it. The route
+  is registered before the global `/api` limiter so the Worker's single
+  address is not the whole website's bucket. `rateLimit()` gained a `key`
+  option; `parametersService` gained `readParametersPayload()`.
+
+### Contract changes
+
+- New route only. Request/response documented in README.
+
+### Validation
+
+- Scripted run against staging (server spawned with the staging creds):
+  503 without the env var; 401 without/with a wrong key; 400s for a bad
+  bill, an unknown appliance (error lists the valid names), 8 appliances;
+  200 for a real request with no `cogs`/`margin` in the body; the numbers
+  (panels, battery kWh, net price, RTO monthly, DP total, monthly savings)
+  equal a direct `computeProposal()` on the same inputs; 4th request from
+  one visitor in a minute → 429 while another visitor still gets 200; a
+  forwarded address without a valid key is ignored (401).
+
+### Deployment notes
+
+- Set `PUBLIC_ESTIMATE_KEY` on the Render service(s) that should serve the
+  website (staging first), and the same value in the External Calculator
+  Worker's secrets when it is wired up. Until then the route answers 503.
+- Engine 1.1.0: after merge, `git tag calc-engine-v1.1.0` + push the tag.
+  The frontend may stay on 1.0.0 (identical math); bump at the next release.
+
 ## 2026-09-27 — `packages/calc-engine`: the calculator's engine lives here now
 
 ### Scope

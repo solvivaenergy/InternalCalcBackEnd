@@ -1,6 +1,6 @@
 {
   "name": "@solviva/calc-engine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Solviva solar sizing and pricing engine — the one implementation behind the Internal Calculator and the website estimate",
   "type": "module",
   "license": "UNLICENSED",

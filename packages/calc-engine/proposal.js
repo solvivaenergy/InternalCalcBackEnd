@@ -25,6 +25,54 @@ import {
   computeCashFlows, buildAnnex,
   firstPostInstallDueDate, optimizeSystem,
 } from './schedule.js';
+import { INCLUDED_DC_CABLE_METERS, INCLUDED_AC_CABLE_METERS } from './constants.js';
+
+// The calculator's Step 1–4 state at its defaults, read from the live
+// parameters the way the app reads them after paramsService.load(). Mirrors
+// App.jsx makeInitialState('all'), which keeps its own copy because it also
+// carries the UI's comments and reset-per-step variants; the backend's
+// estimate endpoint and the parity harness build their inputs from this one.
+// Added in 1.1.0; no computation changed.
+export function defaultState(ap = ADMIN_PARAMS) {
+  return {
+    phase: 1,
+    utilityRate: ap.defaultUtilityRate,
+    monthlyBill: ap.defaultMonthlyBill,
+    deviceRows: Array.from({ length: 2 }, () => ({
+      deviceName: null, count: 1, onTime: null, offTime: null, daysPerWeek: null,
+    })),
+    desiredSavingsPct: 0.5,
+    optimizationMode: 'panels',
+    conservativeSizing: false,
+    panelCount: null,
+    dcCableMeters: INCLUDED_DC_CABLE_METERS,
+    acCableMeters: INCLUDED_AC_CABLE_METERS,
+    rsdEnabled: false,
+    rsdStandalonePanelCount: 3,
+    selectedInverters: [null, null, null],
+    expansionMode: false,
+    existingKwp: null,
+    existingInverterKw: null,
+    batteryKwh: null,
+    batteryRackIncluded: true,
+    batteryAtsIncluded: true,
+    batteryCritLoadsIncluded: true,
+    batteryPackageId: null,
+    netMeteringEnabled: false,
+    roofMaterial: 'metal',
+    location: 'luzon',
+    locationRegion: 'NCR',
+    locationProvince: null,
+    locationCity: 'Manila',
+    locationKm: 18,
+    miscMaterials: [],
+    tenor: 0,
+    downPaymentPct: ap.defaultDownPaymentPct,
+    promoCode: '',
+    irrYears: ap.irrYearsDefault ?? 25,
+    duRateInflation: ap.duRateInflationDefault ?? 0,
+  };
+}
 
 // Back-derive the installation date from an issue date: seed at +14 days, then
 // walk forward until the first post-install due date clears the minimum-days

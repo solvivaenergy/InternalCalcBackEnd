@@ -12,15 +12,17 @@
 // (seconds until the window resets). Expired entries are swept once a minute
 // so an address that never comes back does not stay in memory.
 //
-// Keys on req.ip, which is the X-Forwarded-For client only because server.js
-// sets `trust proxy`; without that every caller behind Render's proxy would
-// share one bucket.
+// Keys on req.ip by default, which is the X-Forwarded-For client only because
+// server.js sets `trust proxy`; without that every caller behind Render's
+// proxy would share one bucket. `key(req)` overrides the key — the estimate
+// route uses the visitor address its Worker forwards, once the Worker has
+// proven itself with the shared key.
 // =============================================================================
 
 const SWEEP_INTERVAL_MS = 60_000;
 
-export function rateLimit({ max, windowMs }) {
-  const hits = new Map(); // ip -> { count, resetAt }
+export function rateLimit({ max, windowMs, key }) {
+  const hits = new Map(); // key -> { count, resetAt }
 
   const sweep = setInterval(() => {
     const now = Date.now();
@@ -32,11 +34,11 @@ export function rateLimit({ max, windowMs }) {
 
   return function rateLimitMiddleware(req, res, next) {
     const now = Date.now();
-    const key = req.ip || "unknown";
-    let entry = hits.get(key);
+    const k = (key ? key(req) : req.ip) || "unknown";
+    let entry = hits.get(k);
     if (!entry || entry.resetAt <= now) {
       entry = { count: 0, resetAt: now + windowMs };
-      hits.set(key, entry);
+      hits.set(k, entry);
     }
     entry.count += 1;
     if (entry.count > max) {

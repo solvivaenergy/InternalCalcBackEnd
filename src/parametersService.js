@@ -647,6 +647,14 @@ export async function getParameters(accessToken) {
   return { status: 200, payload: await readCurrentPayload(supabase) };
 }
 
+// The row for server-side callers that decide access themselves (the estimate
+// endpoint checks its shared key). Service-role read, no session.
+export async function readParametersPayload() {
+  assertLocalJsonStorage();
+  if (isLocalJsonStorage()) return await readLocalJsonPayload();
+  return await readCurrentPayload(getSupabaseClient());
+}
+
 export async function putParameters(
   body,
   accessToken,
