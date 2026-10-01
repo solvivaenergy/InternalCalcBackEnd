@@ -6,11 +6,27 @@
 // proposal into a DRAFT sale.order on the lead's opportunity:
 //
 //   064C  customer (the lead's partner), quotation date, expiration, salesperson
+//   064D  one order line per package (A / B / C products from 064G) at the
+//         calculator's VAT-inclusive subtotal, the inclusions as the line
+//         description, and a negative "Discount" line for a promo discount
 //   064E  the calculator's financing figures (x_calc_* fields, added by
 //         scripts/odoo/apply-dinuguan.mjs) so Odoo's bill schedule can anchor on
 //         the calculator's own amortisation
 //   064J  one Bill-of-Quantities row per package inclusion, with quantities
 //   064K  written into the x_boq_line_ids table on the same create call
+//   064F  the proposal PDF, attached to that quotation by a second call
+//         (attachProposalPdf) with a chatter note
+//   064S  a "D. Interest" line on RTO quotations and the Studio Financed
+//         Amount field (net price less the down payment)
+//   SOLSB-23  Create Mode = Automatic (Studio field x_studio_create_mode)
+//   Payment Scheme section (Studio): Payment Scheme + Mode from the financing;
+//         the Recurring Plan is never set from here (user decision 2026-10-01)
+//
+// VAT: the calculator prices everything VAT-inclusive. The package products
+// carry the price-included "12%" sale tax (account.tax 3 on both builds), so
+// the subtotal goes in as price_unit unchanged and Odoo backs the VAT out. The
+// discount line gets the same taxes explicitly so the VAT is taken on the
+// discounted price, which is what the calculator does.
 //
 // PRODUCT DECISIONS (sprint Dinuguan refinement, 2026-09-25):
 //   • No lead id → no quotation. The frontend does not call this route at all
@@ -42,6 +58,8 @@ import {
 
 const LEAD_ID_RE = /^[1-9]\d{0,8}$/;
 const MAX_BOQ_ROWS = 200;
+const MAX_ORDER_LINES = 10;
+const MAX_INCLUSIONS_PER_LINE = 80;
 const PACKAGES = new Set(["A", "B", "C"]);
 
 // Product names as created by scripts/odoo/apply-dinuguan.mjs (story 064G).
@@ -50,6 +68,8 @@ export const PACKAGE_PRODUCT_NAMES = {
   A: "A. Solar Package",
   B: "B. Battery Package",
   C: "C. Misc. Materials, Labor, Services & Other Adjustments",
+  // 064S — the interest line of an RTO quotation (AssetCo's revenue).
+  D: "D. Interest",
 };
 
 // Calculator figures → sale.order custom fields. Only fields that exist on the
@@ -101,8 +121,13 @@ function likeExact(s) {
 }
 
 // ─── Validation ──────────────────────────────────────────────────────────────
-// Returns { error } or { leadId, proposal, boq }. Shapes are checked here so
-// nothing downstream has to defend against a malformed browser payload.
+// Returns { error } or { leadId, proposal, boq, orderLines }. Shapes are
+// checked here so nothing downstream has to defend against a malformed
+// browser payload. Exported (as validateQuotationBody) for unit checks.
+export function validateQuotationBody(body) {
+  return validateBody(body);
+}
+
 function validateBody(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { error: "Body must be a JSON object." };
@@ -139,10 +164,35 @@ function validateBody(body) {
     });
   }
 
+  // 064D — one entry per package from the calculator's Summary. A row with an
+  // unknown package letter is dropped; a non-numeric amount becomes 0 (the
+  // line still carries its inclusions, and ₱0 is visible rather than hidden).
+  const rawLines = Array.isArray(p.orderLines) ? p.orderLines : [];
+  if (rawLines.length > MAX_ORDER_LINES) return { error: `proposal.orderLines has more than ${MAX_ORDER_LINES} rows.` };
+  const orderLines = [];
+  const seen = new Set();
+  for (const row of rawLines) {
+    if (!row || typeof row !== "object") continue;
+    const pkg = String(row.package || "").trim().toUpperCase();
+    if (!PACKAGES.has(pkg) || seen.has(pkg)) continue;
+    seen.add(pkg);
+    const amount = Number(row.amount);
+    const inclusions = (Array.isArray(row.inclusions) ? row.inclusions : [])
+      .map((s) => str(s, 500))
+      .filter(Boolean)
+      .slice(0, MAX_INCLUSIONS_PER_LINE);
+    orderLines.push({
+      package: pkg,
+      inclusions,
+      amount: Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0,
+    });
+  }
+
   return {
     leadId: Number(rawLead),
     proposal: { ...p, quote, system, agent, customer },
     boq,
+    orderLines,
   };
 }
 
@@ -165,8 +215,9 @@ async function resolveCaller(accessToken) {
 // ─── Field availability (cached) ─────────────────────────────────────────────
 // fields_get once per process per database; the custom fields only appear
 // after the apply script runs, and a stale negative result self-heals on the
-// next TTL expiry.
-let fieldsCache = { key: "", at: 0, fields: null, ttl: 0 };
+// next TTL expiry. The cache keeps the selection keys too, so a Studio radio
+// is only written with a value the database actually offers.
+let fieldsCache = { key: "", at: 0, fields: null, meta: null, ttl: 0 };
 const FIELDS_TTL_MS = 10 * 60 * 1000;
 // A NEGATIVE answer (custom fields absent) is cached only briefly: the apply
 // script may run at any moment, and on 2026-09-25 the staging service kept
@@ -175,31 +226,196 @@ const FIELDS_MISSING_TTL_MS = 30 * 1000;
 
 async function fieldsAvailable(cfg, signal) {
   const key = `${cfg.url}|${cfg.db}`;
-  if (fieldsCache.fields && fieldsCache.key === key && Date.now() - fieldsCache.at < fieldsCache.ttl) {
-    return fieldsCache.fields;
+  if (!(fieldsCache.fields && fieldsCache.key === key && Date.now() - fieldsCache.at < fieldsCache.ttl)) {
+    const res = await executeKw(cfg, "sale.order", "fields_get", [], { attributes: ["type", "selection"] }, signal);
+    const fields = new Set(Object.keys(res || {}));
+    const complete = fields.has("x_boq_line_ids") && CALC_FIELD_MAP.every(([f]) => fields.has(f));
+    fieldsCache = { key, at: Date.now(), fields, meta: res || {}, ttl: complete ? FIELDS_TTL_MS : FIELDS_MISSING_TTL_MS };
   }
-  const res = await executeKw(cfg, "sale.order", "fields_get", [], { attributes: ["type"] }, signal);
-  const fields = new Set(Object.keys(res || {}));
-  const complete = fields.has("x_boq_line_ids") && CALC_FIELD_MAP.every(([f]) => fields.has(f));
-  fieldsCache = { key, at: Date.now(), fields, ttl: complete ? FIELDS_TTL_MS : FIELDS_MISSING_TTL_MS };
-  return fields;
+  const { fields, meta } = fieldsCache;
+  return {
+    has: (name) => fields.has(name),
+    // The selection keys of a selection field, or null when the field is
+    // absent or not a selection.
+    selectionKeys: (name) => {
+      const f = meta[name];
+      return f && Array.isArray(f.selection) ? f.selection.map((pair) => pair[0]) : null;
+    },
+  };
+}
+
+// Pure: the Studio "Payment Scheme" section from the calculator's financing
+// (user decision 2026-10-01: fill this section, never the Recurring Plan).
+//   Payment Scheme  direct | rto           from the tenor (0 = Direct Purchase)
+//   Mode            straight               Direct Purchase
+//                   downpayment | nodown   RTO, by whether a down payment is set
+// Returns [field, value] pairs; the caller writes only those whose key the
+// database offers. Exported for unit checks.
+export function paymentSchemeValues({ tenorMonths, downPaymentPct }) {
+  const isDirect = int(tenorMonths) <= 0;
+  return [
+    ["x_studio_payment_scheme", isDirect ? "direct" : "rto"],
+    ["x_studio_mode", isDirect ? "straight" : (num(downPaymentPct) > 0 ? "downpayment" : "nodown")],
+  ];
+}
+
+// ─── Package products (cached) ───────────────────────────────────────────────
+// product.product ids (and sale taxes) of the three package products from
+// story 064G, plus the company's discount product, resolved once per process
+// per database. As with the fields, an incomplete answer is cached only
+// briefly so a product created later is picked up without a restart.
+let productsCache = { key: "", at: 0, value: null, ttl: 0 };
+
+async function packageProducts(cfg, companyId, signal) {
+  const key = `${cfg.url}|${cfg.db}|${companyId}`;
+  if (productsCache.value && productsCache.key === key && Date.now() - productsCache.at < productsCache.ttl) {
+    return productsCache.value;
+  }
+  const names = Object.values(PACKAGE_PRODUCT_NAMES);
+  const rows = await searchRead(
+    cfg,
+    "product.product",
+    [["name", "in", names], ["sale_ok", "=", true]],
+    ["id", "name", "display_name", "taxes_id"],
+    signal,
+    { limit: 20, order: "id asc" },
+  );
+  const byPackage = {};
+  for (const [code, name] of Object.entries(PACKAGE_PRODUCT_NAMES)) {
+    const hit = (rows || []).find((r) => r.name === name);
+    if (hit) {
+      byPackage[code] = {
+        id: hit.id,
+        name,
+        // display_name carries the internal reference ("[IC-PKG-C] C. …"),
+        // which is what Odoo itself puts on the first line of a hand-picked
+        // product's description, so the list view folds it into the product.
+        displayName: hit.display_name || name,
+        taxIds: Array.isArray(hit.taxes_id) ? hit.taxes_id : [],
+      };
+    }
+  }
+  const companies = await searchRead(
+    cfg,
+    "res.company",
+    [["id", "=", companyId]],
+    ["sale_discount_product_id"],
+    signal,
+    { limit: 1 },
+  );
+  const discount = companies && companies[0] && Array.isArray(companies[0].sale_discount_product_id)
+    ? companies[0].sale_discount_product_id[0]
+    : null;
+  const value = { byPackage, discountProductId: discount };
+  const complete = Object.keys(byPackage).length === names.length && !!discount;
+  productsCache = { key, at: Date.now(), value, ttl: complete ? FIELDS_TTL_MS : FIELDS_MISSING_TTL_MS };
+  return value;
+}
+
+// Pure: split a peso discount across the packages in proportion to their
+// gross amounts (064D criterion 4 — "applied at a package level"). Parts are
+// rounded to centavos and the rounding residual lands on the largest package,
+// so the parts always add up to the discount exactly. Exported for checks.
+export function allocateDiscount(discount, amounts) {
+  const gross = (amounts || []).map((a) => Math.max(0, num(a)));
+  const total = gross.reduce((s, a) => s + a, 0);
+  const d = Math.abs(num(discount));
+  if (!(d > 0) || !(total > 0)) return gross.map(() => 0);
+  const parts = gross.map((a) => Math.round(((d * a) / total) * 100) / 100);
+  const residual = Math.round((d - parts.reduce((s, p) => s + p, 0)) * 100) / 100;
+  if (residual !== 0) {
+    const largest = gross.reduce((best, a, i) => (a > gross[best] ? i : best), 0);
+    parts[largest] = Math.round((parts[largest] + residual) * 100) / 100;
+  }
+  return parts;
+}
+
+function peso(n) {
+  return `₱${num(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Pure: the (0, 0, vals) commands for sale.order.order_line. Exported for
+// unit checks. `products` is packageProducts().byPackage; a package whose
+// product is missing is skipped and named in `skipped`. The shape, per the
+// 064D / 064S criteria (tracker, 2026-10-01):
+//   • one line per package at its VAT-INCLUSIVE gross subtotal — name = the
+//     Odoo product display name on the first line, then the inclusions, the
+//     same text Odoo composes when a rep picks the product by hand;
+//   • a promo discount (quote.discountAmount, the engine's AH6, ≤ 0) becomes
+//     one negative "Discount" line PER PACKAGE, right under it, with the
+//     package's share (allocateDiscount) and the package line's taxes, so
+//     each package shows Gross, Discount and Net and the order total is the
+//     calculator's net price;
+//   • RTO only: a "D. Interest" line (quote.interestAmount = Total Amount Due
+//     − net price, the engine's AH19) after the packages, so Finance sees the
+//     principal and the interest revenue apart. Absent product → skipped.
+export function buildOrderLineCommands({ orderLines, products, discountAmount, promoCode, discountProductId, quote }) {
+  const commands = [];
+  const skipped = [];
+  const lines = [];
+  for (const line of orderLines || []) {
+    if (products && products[line.package]) lines.push(line);
+    else skipped.push(PACKAGE_PRODUCT_NAMES[line.package] || line.package);
+  }
+  const code = str(promoCode, 64);
+  const shares = allocateDiscount(discountAmount, lines.map((l) => l.amount));
+  let sequence = 10;
+  lines.forEach((line, i) => {
+    const product = products[line.package];
+    commands.push([0, 0, {
+      sequence,
+      product_id: product.id,
+      name: [product.displayName || product.name, ...(line.inclusions || [])].join("\n"),
+      product_uom_qty: 1,
+      price_unit: num(line.amount),
+    }]);
+    sequence += 10;
+    if (shares[i] > 0) {
+      if (!discountProductId) {
+        if (!skipped.includes("Discount")) skipped.push("Discount");
+        return;
+      }
+      commands.push([0, 0, {
+        sequence,
+        product_id: discountProductId,
+        name: `Discount\n${product.name}${code ? ` — promo code ${code}` : ""}`,
+        product_uom_qty: 1,
+        price_unit: -shares[i],
+        tax_id: [[6, 0, product.taxIds || []]],
+      }]);
+      sequence += 10;
+    }
+  });
+
+  const q = quote || {};
+  const tenor = int(q.tenorMonths);
+  const interest = q.interestAmount != null
+    ? num(q.interestAmount)
+    : Math.max(0, num(q.totalAmountDue) - num(q.netPrice));
+  if (lines.length && tenor > 0 && interest > 0) {
+    const product = products && products.D;
+    if (!product) {
+      skipped.push(PACKAGE_PRODUCT_NAMES.D);
+    } else {
+      const financed = q.amountFinanced != null ? num(q.amountFinanced) : num(q.netPrice) - num(q.downPaymentAmount);
+      const rateRaw = num(q.interestRatePa);
+      const ratePct = rateRaw > 0 && rateRaw <= 1 ? rateRaw * 100 : rateRaw;
+      commands.push([0, 0, {
+        sequence,
+        product_id: product.id,
+        name: `${product.displayName || product.name}\nInterest on ${peso(financed)} financed over ${tenor} months at ${ratePct.toFixed(2)}% p.a.`,
+        product_uom_qty: 1,
+        price_unit: interest,
+      }]);
+      sequence += 10;
+    }
+  }
+  return { commands, skipped };
 }
 
 export function resetOdooQuotationCaches() {
-  fieldsCache = { key: "", at: 0, fields: null, ttl: 0 };
-}
-
-// ─── Date arithmetic for the subscription end date ───────────────────────────
-// Odoo's own automation does date_order + relativedelta(months=N), clamping to
-// the end of the month. Mirror that on the Manila calendar date.
-function addMonthsManila(value, months) {
-  const ymd = toOdooDateManila(value);
-  if (!ymd) return null;
-  const [y, m, d] = ymd.split("-").map(Number);
-  const target = new Date(Date.UTC(y, m - 1 + months, 1));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(d, lastDay));
-  return target.toISOString().slice(0, 10);
+  fieldsCache = { key: "", at: 0, fields: null, meta: null, ttl: 0 };
+  productsCache = { key: "", at: 0, value: null, ttl: 0 };
 }
 
 // ─── Public entry point ──────────────────────────────────────────────────────
@@ -207,7 +423,7 @@ function addMonthsManila(value, months) {
 export async function createQuotationFromProposal(body, accessToken, requestId = "") {
   const parsed = validateBody(body);
   if (parsed.error) return { status: 400, payload: { error: parsed.error } };
-  const { leadId, proposal, boq } = parsed;
+  const { leadId, proposal, boq, orderLines } = parsed;
 
   const caller = await resolveCaller(accessToken);
   if (caller.error) return { status: caller.status, payload: { error: caller.error } };
@@ -291,7 +507,12 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       warnings.push(`No Odoo user matches ${caller.email || "the signed-in account"}; salesperson taken from the lead.`);
     }
 
-    // 3. Payment term by tenor (0 = Direct Purchase), and the RTO plan.
+    // 3. Payment term by tenor (0 = Direct Purchase). The Recurring Plan and
+    // end date are deliberately NOT set, even for RTO (user decision
+    // 2026-10-01): the subscription plan is Finance's call in Odoo, and the
+    // 064E automation still fills it when the payment term is changed on the
+    // form. The calculator's financing goes to the Payment Scheme section
+    // below instead.
     const tenor = int(proposal.quote.tenorMonths);
     const isDirect = tenor <= 0;
     const termName = isDirect ? "Direct Purchase" : `${tenor} Months`;
@@ -305,32 +526,6 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
     );
     const paymentTermId = Array.isArray(terms) && terms.length ? terms[0].id : null;
     if (!paymentTermId) warnings.push(`No Odoo payment term named "${termName}"; left unset.`);
-
-    let planId = null;
-    if (!isDirect) {
-      const plans = await searchRead(
-        cfg,
-        "sale.subscription.plan",
-        [["name", "=ilike", likeExact("Monthly Rent-to-Own")]],
-        ["id", "name"],
-        signal,
-        { limit: 1 },
-      );
-      if (Array.isArray(plans) && plans.length) {
-        planId = plans[0].id;
-      } else {
-        const monthly = await searchRead(
-          cfg,
-          "sale.subscription.plan",
-          [["billing_period_value", "=", 1], ["billing_period_unit", "=", "month"]],
-          ["id", "name"],
-          signal,
-          { limit: 1 },
-        );
-        if (Array.isArray(monthly) && monthly.length) planId = monthly[0].id;
-        else warnings.push("No monthly subscription plan found in Odoo; recurring plan left unset.");
-      }
-    }
 
     // 4. Which custom fields exist on this database.
     const available = await fieldsAvailable(cfg, signal);
@@ -347,16 +542,44 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
     if (userId) vals.user_id = userId;
     if (Array.isArray(lead.team_id)) vals.team_id = lead.team_id[0];
     if (paymentTermId) vals.payment_term_id = paymentTermId;
-    if (planId) {
-      vals.plan_id = planId;
-      const endDate = addMonthsManila(proposal.generatedAt, tenor);
-      if (endDate) vals.end_date = endDate;
-    }
 
     for (const [field, pick] of CALC_FIELD_MAP) {
       if (!available.has(field)) { skipped.push(field); continue; }
       const v = pick(proposal);
       if (v !== undefined) vals[field] = v;
+    }
+
+    // SOLSB-23 — a quotation the calculator creates is tagged Create Mode =
+    // Automatic. x_studio_create_mode is a Studio selection (manual |
+    // automatic) that already exists on both builds and defaults to manual;
+    // it is not one of the fields the apply script owns, so its absence gets
+    // its own warning rather than the "run the apply script" one.
+    if (available.has("x_studio_create_mode")) {
+      vals.x_studio_create_mode = "automatic";
+    } else {
+      warnings.push("Odoo has no Create Mode field (x_studio_create_mode); the quotation was left as Manual.");
+    }
+
+    // Payment Scheme section (Studio radios). Each value is written only when
+    // the database offers that key, so a renamed option degrades to a
+    // warning instead of a failed create.
+    for (const [field, value] of paymentSchemeValues(proposal.quote)) {
+      const keys = available.selectionKeys(field);
+      if (keys && keys.includes(value)) vals[field] = value;
+      else warnings.push(`Odoo field ${field} is missing or has no "${value}" option; left at its default.`);
+    }
+
+    // 064S — Financed Amount (Studio monetary): what AssetCo lends on an RTO
+    // quotation, the net price less the down payment (the engine's AH11).
+    if (!isDirect) {
+      const financed = proposal.quote.amountFinanced != null
+        ? num(proposal.quote.amountFinanced)
+        : num(proposal.quote.netPrice) - num(proposal.quote.downPaymentAmount);
+      if (!available.has("x_studio_financed_amount")) {
+        warnings.push("Odoo has no Financed Amount field (x_studio_financed_amount); left unset.");
+      } else if (financed > 0) {
+        vals.x_studio_financed_amount = financed;
+      }
     }
 
     if (available.has("x_boq_line_ids")) {
@@ -377,6 +600,27 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       warnings.push(`Odoo fields not present on this database (run scripts/odoo/apply-dinuguan.mjs): ${skipped.join(", ")}.`);
     }
 
+    // 4b. 064D — order lines on the package products. A missing product skips
+    // its line and is reported; the quotation is still created.
+    let orderLineCount = 0;
+    if (orderLines.length) {
+      const companyId = Array.isArray(lead.company_id) ? lead.company_id[0] : 1;
+      const products = await packageProducts(cfg, companyId, signal);
+      const built = buildOrderLineCommands({
+        orderLines,
+        products: products.byPackage,
+        discountAmount: proposal.quote.discountAmount,
+        promoCode: proposal.quote.promoCode,
+        discountProductId: products.discountProductId,
+        quote: proposal.quote,
+      });
+      if (built.commands.length) vals.order_line = built.commands;
+      orderLineCount = built.commands.length;
+      if (built.skipped.length) {
+        warnings.push(`Odoo products not found, so these order lines were skipped: ${built.skipped.join(", ")}.`);
+      }
+    }
+
     // 5. Create the quotation.
     const orderId = await executeKw(cfg, "sale.order", "create", [vals], {}, signal);
     if (typeof orderId !== "number") throw new Error("sale.order create returned no id");
@@ -392,7 +636,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
           (isDirect ? "" : `, ${tenor} months at ${escapeHtml(String(q.interestRatePa ?? ""))} p.a.`),
         `Net price ₱${num(q.netPrice).toLocaleString("en-PH")}, down payment ₱${num(q.downPaymentAmount).toLocaleString("en-PH")}` +
           (isDirect ? "" : `, monthly ₱${num(q.monthlyPayment).toLocaleString("en-PH")}, total due ₱${num(q.totalAmountDueInclDst).toLocaleString("en-PH")}`) + ".",
-        `Bill of Quantities rows: ${boq.length}.`,
+        `Order lines: ${orderLineCount}. Bill of Quantities rows: ${boq.length}.`,
       ];
       // Odoo 18 escapes `body` unless body_is_html is set (a plain string is
       // never trusted as markup over RPC). Without it the note shows literal
@@ -411,7 +655,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
     }
 
     console.log("[odoo-quotation] created", {
-      requestId, leadId, orderId, orderName, salespersonSource, boqRows: boq.length, skipped,
+      requestId, leadId, orderId, orderName, salespersonSource, orderLines: orderLineCount, boqRows: boq.length, skipped,
     });
     return {
       status: 201,
@@ -426,5 +670,81 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       status: 502,
       payload: { error: "Odoo did not accept the quotation.", code: "odoo_unavailable" },
     };
+  }
+}
+
+// ─── 064F — attach the proposal PDF to the quotation ─────────────────────────
+// Second call from the calculator, right after the quotation is created: the
+// PDF bytes travel as a raw application/pdf body (the JSON limit does not
+// apply), and land as an ir.attachment on the sale.order plus a chatter note
+// carrying it, which is where the "Logs" column of the test cases looks.
+// The order must carry the proposal reference the caller names, so a PDF can
+// only be attached to the quotation its own generation created. Same gate
+// and session rules as the create call; never throws.
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
+
+export async function attachProposalPdf({ orderId, quoteRef, fileName, pdf }, accessToken, requestId = "") {
+  const id = Number(orderId);
+  if (!Number.isInteger(id) || id <= 0) return { status: 400, payload: { error: "orderId must be a positive integer." } };
+  const ref = str(quoteRef, 64);
+  if (!ref) return { status: 400, payload: { error: "quoteRef is required." } };
+  if (!Buffer.isBuffer(pdf) || pdf.length < 8 || pdf.subarray(0, 5).toString("latin1") !== "%PDF-") {
+    return { status: 400, payload: { error: "Body must be a PDF (Content-Type application/pdf)." } };
+  }
+  if (pdf.length > MAX_PDF_BYTES) return { status: 413, payload: { error: "PDF larger than 25 MB." } };
+
+  const caller = await resolveCaller(accessToken);
+  if (caller.error) return { status: caller.status, payload: { error: caller.error } };
+  if (String(process.env.ODOO_QUOTATION_ENABLED || "").toLowerCase() !== "true") {
+    return { status: 503, payload: { error: "Saving quotations to Odoo is switched off on this server.", code: "push_disabled" } };
+  }
+  const cfg = odooConfig();
+  if (!cfg) return { status: 503, payload: { error: "Odoo is not configured on the server.", code: "not_configured" } };
+
+  // Base64 of a multi-megabyte PDF takes longer than a field read.
+  const signal = AbortSignal.timeout(odooTimeoutMs() * 4);
+  const warnings = [];
+  try {
+    const orders = await searchRead(cfg, "sale.order", [["id", "=", id]], ["name", "client_order_ref"], signal, { limit: 1 });
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return { status: 404, payload: { error: "No quotation with that id.", code: "order_not_found" } };
+    }
+    if (String(orders[0].client_order_ref || "") !== ref) {
+      return { status: 409, payload: { error: "The quotation does not carry this proposal reference, so the PDF was not attached.", code: "ref_mismatch" } };
+    }
+    const safeName = (str(fileName, 120) || `Solviva-Proposal-${ref}.pdf`).replace(/[^\w.\- ]+/g, "_");
+    const attachmentId = await executeKw(cfg, "ir.attachment", "create", [{
+      name: safeName,
+      type: "binary",
+      datas: pdf.toString("base64"),
+      mimetype: "application/pdf",
+      res_model: "sale.order",
+      res_id: id,
+    }], {}, signal);
+    if (typeof attachmentId !== "number") throw new Error("ir.attachment create returned no id");
+    try {
+      await executeKw(
+        cfg,
+        "sale.order",
+        "message_post",
+        [[id]],
+        {
+          body: `<p>Proposal PDF <b>${escapeHtml(safeName)}</b> attached from the Internal Calculator by ${escapeHtml(caller.email || "an unknown user")}.</p>`,
+          body_is_html: true,
+          message_type: "comment",
+          subtype_xmlid: "mail.mt_note",
+          attachment_ids: [attachmentId],
+        },
+        signal,
+      );
+    } catch (err) {
+      warnings.push("PDF attached, but the chatter note could not be posted.");
+      console.warn("[odoo-quotation] pdf message_post failed", { requestId, orderId: id, reason: String(err && err.message).slice(0, 120) });
+    }
+    console.log("[odoo-quotation] pdf attached", { requestId, orderId: id, attachmentId, bytes: pdf.length });
+    return { status: 201, payload: { attachmentId, orderName: orders[0].name, warnings } };
+  } catch (err) {
+    console.error("[odoo-quotation] pdf failed", { requestId, orderId: id, reason: String(err && err.message).slice(0, 160) });
+    return { status: 502, payload: { error: "Odoo did not accept the PDF.", code: "odoo_unavailable" } };
   }
 }

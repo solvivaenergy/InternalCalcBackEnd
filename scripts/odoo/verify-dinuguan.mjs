@@ -22,10 +22,37 @@ const info = (msg) => console.log(`  · ${msg}`);
 
 // 064G
 console.log("064G — products");
-for (const name of ["A. Solar Package", "B. Battery Package", "C. Misc. Materials, Labor, Services & Other Adjustments"]) {
-  const row = await api.one("product.template", [["name", "=", name], ["active", "in", [true, false]]], ["id", "active", "type", "list_price", "categ_id", "default_code"]);
+const PACKAGE_NAMES = ["A. Solar Package", "B. Battery Package", "C. Misc. Materials, Labor, Services & Other Adjustments", "D. Interest"];
+for (const name of PACKAGE_NAMES) {
+  const row = await api.one("product.template", [["name", "=", name], ["active", "in", [true, false]]], ["id", "active", "type", "list_price", "categ_id", "default_code", "taxes_id"]);
   if (!row) bad(`missing product "${name}"`);
-  else ok(`${name} (id ${row.id}, ${row.type}, ₱${row.list_price}, ${row.categ_id ? row.categ_id[1] : "no category"}${row.active ? "" : ", ARCHIVED"})`);
+  else ok(`${name} (id ${row.id}, ${row.type}, ₱${row.list_price}, ${row.categ_id ? row.categ_id[1] : "no category"}, taxes ${JSON.stringify(row.taxes_id)}${row.active ? "" : ", ARCHIVED"})`);
+}
+const discountProduct = await api.one("res.company", [["id", "=", 1]], ["sale_discount_product_id"]);
+if (discountProduct && discountProduct.sale_discount_product_id) ok(`company discount product: ${discountProduct.sale_discount_product_id[1]} (id ${discountProduct.sale_discount_product_id[0]})`);
+else bad("company has no sale_discount_product_id (064D discount lines need it)");
+console.log("064G — Sales Package model");
+const pkgModel = await api.one("ir.model", [["model", "=", "x_sales_package"]], ["id"]);
+if (!pkgModel) bad("model x_sales_package missing");
+else {
+  ok(`model x_sales_package (id ${pkgModel.id})`);
+  const pkgFields = new Set((await api.searchRead("ir.model.fields", [["model", "=", "x_sales_package"]], ["name"])).map((f) => f.name));
+  for (const f of ["x_name", "x_code", "x_sequence", "x_product_id"]) {
+    if (pkgFields.has(f)) ok(`field x_sales_package.${f}`); else bad(`field x_sales_package.${f} missing`);
+  }
+  try {
+    const rows = await api.searchRead("x_sales_package", [], ["x_name", "x_code", "x_product_id"], { order: "x_sequence asc" });
+    const names = rows.map((r) => r.x_name);
+    for (const name of PACKAGE_NAMES) {
+      const r = rows.find((x) => x.x_name === name);
+      if (!r) bad(`no Sales Package record "${name}"`);
+      else if (!r.x_product_id) bad(`Sales Package "${name}" has no product`);
+      else ok(`Sales Package "${name}" → ${r.x_product_id[1]}`);
+    }
+    if (rows.length > PACKAGE_NAMES.length) info(`extra Sales Package records: ${names.filter((n) => !PACKAGE_NAMES.includes(n)).join(", ")}`);
+  } catch (err) { bad(`x_sales_package not readable: ${err.message}`); }
+  const menu = await api.one("ir.ui.menu", [["name", "=", "Sales Packages"]], ["id", "complete_name"]);
+  if (menu) ok(`menu ${menu.complete_name} (id ${menu.id})`); else bad("menu Sales › Configuration › Sales Packages missing");
 }
 
 // 064I

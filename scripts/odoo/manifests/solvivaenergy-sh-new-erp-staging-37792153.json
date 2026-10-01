@@ -305,6 +305,118 @@
       "step": "064L",
       "created": true,
       "at": "2026-09-25T11:21:11.968Z"
+    },
+    {
+      "model": "product.template",
+      "id": 417,
+      "key": "D. Interest",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:36.495Z"
+    },
+    {
+      "model": "ir.model",
+      "id": 1388,
+      "key": "x_sales_package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:37.594Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24111,
+      "key": "x_sales_package.x_name",
+      "step": "064G",
+      "created": false,
+      "at": "2026-10-01T16:07:38.171Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24119,
+      "key": "x_sales_package.x_code",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:38.708Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24121,
+      "key": "x_sales_package.x_sequence",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:39.793Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 24123,
+      "key": "x_sales_package.x_product_id",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:41.113Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1834,
+      "key": "x_sales_package_user",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:41.675Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1835,
+      "key": "x_sales_package_manager",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:42.132Z"
+    },
+    {
+      "model": "ir.actions.act_window",
+      "id": 1762,
+      "key": "Sales Packages",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:42.573Z"
+    },
+    {
+      "model": "ir.ui.menu",
+      "id": 888,
+      "key": "Sales/Configuration/Sales Packages",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:43.071Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 1,
+      "key": "A. Solar Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:43.551Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 2,
+      "key": "B. Battery Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:43.783Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 3,
+      "key": "C. Misc. Materials, Labor, Services & Other Adjustments",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:43.912Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 4,
+      "key": "D. Interest",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-01T16:07:44.040Z"
     }
   ],
   "modified": [
@@ -320,7 +432,7 @@
   ],
   "steps": {
     "064G": {
-      "lastRun": "2026-09-25T11:20:26.554Z",
+      "lastRun": "2026-10-01T16:07:44.040Z",
       "applied": true
     },
     "064I": {
@@ -449,6 +561,35 @@
         "  + created ir.ui.view \"Internal Calculator: crm.lead Generate Proposal button\" (id 5352)",
         "064L — hide New Quotation on the opportunity",
         "  + created ir.ui.view \"Internal Calculator: crm.lead hide New Quotation\" (id 5353)"
+      ]
+    },
+    {
+      "at": "2026-10-01T16:07:36.104Z",
+      "steps": [
+        "064G"
+      ],
+      "apply": true,
+      "calculatorUrl": "https://staging-internalcalc.solvivaenergy.com",
+      "actions": [
+        "064G — package products",
+        "  category: Solar System (id 19)",
+        "  = product.template \"A. Solar Package\" exists (id 412)",
+        "  = product.template \"B. Battery Package\" exists (id 413)",
+        "  = product.template \"C. Misc. Materials, Labor, Services & Other Adjustments\" exists (id 416)",
+        "  + created product.template \"D. Interest\" (id 417)",
+        "  + created ir.model \"x_sales_package\" (id 1388)",
+        "  = ir.model.fields \"x_sales_package.x_name\" exists (id 24111)",
+        "  + created ir.model.fields \"x_sales_package.x_code\" (id 24119)",
+        "  + created ir.model.fields \"x_sales_package.x_sequence\" (id 24121)",
+        "  + created ir.model.fields \"x_sales_package.x_product_id\" (id 24123)",
+        "  + created ir.model.access \"x_sales_package_user\" (id 1834)",
+        "  + created ir.model.access \"x_sales_package_manager\" (id 1835)",
+        "  + created ir.actions.act_window \"Sales Packages\" (id 1762)",
+        "  + created ir.ui.menu \"Sales/Configuration/Sales Packages\" (id 888)",
+        "  + created x_sales_package \"A. Solar Package\" (id 1)",
+        "  + created x_sales_package \"B. Battery Package\" (id 2)",
+        "  + created x_sales_package \"C. Misc. Materials, Labor, Services & Other Adjustments\" (id 3)",
+        "  + created x_sales_package \"D. Interest\" (id 4)"
       ]
     }
   ]

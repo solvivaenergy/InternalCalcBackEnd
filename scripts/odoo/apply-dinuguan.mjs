@@ -15,7 +15,8 @@
 // commit it.
 //
 // Stories covered (see docs/dinuguan-odoo-deployment.md):
-//   064G  three package products
+//   064G  the package products (A / B / C, plus "D. Interest" for 064S) and
+//         the Sales Package configuration model that points at them
 //   064I  Bill of Quantities table on the quotation (x_boq_line)
 //   064E  calculator financing fields on sale.order + the bill-schedule
 //         automation anchored on the calculator's amortisation
@@ -42,11 +43,30 @@ const APPLY = !!flags.yes;
 const now = () => new Date().toISOString();
 
 // ─── Names and archs (the natural keys) ──────────────────────────────────────
+// Mirror of PACKAGE_PRODUCT_NAMES in src/odooQuotationService.js.
 export const PACKAGE_PRODUCTS = [
-  { code: "IC-PKG-A", name: "A. Solar Package" },
-  { code: "IC-PKG-B", name: "B. Battery Package" },
-  { code: "IC-PKG-C", name: "C. Misc. Materials, Labor, Services & Other Adjustments" },
+  { code: "IC-PKG-A", name: "A. Solar Package", type: "consu" },
+  { code: "IC-PKG-B", name: "B. Battery Package", type: "consu" },
+  { code: "IC-PKG-C", name: "C. Misc. Materials, Labor, Services & Other Adjustments", type: "consu" },
+  // 064S — the interest line of an RTO quotation. A service: nothing is
+  // delivered. Taxes are left at the company default; Finance decides the
+  // VAT treatment of interest on the product itself.
+  { code: "IC-PKG-D", name: "D. Interest", type: "service" },
 ];
+
+// 064G criterion 2 — a "Sales Package" configuration model (Sales ›
+// Configuration › Sales Packages), one record per package, each pointing at
+// its product.product. The calculator does not read it; it is the place the
+// business keeps the package ↔ product mapping that the quotation lines use.
+const PKG_MODEL = "x_sales_package";
+const PKG_MODEL_FIELDS = [
+  { name: "x_name", ttype: "char", field_description: "Sales Package", required: true },
+  { name: "x_code", ttype: "char", field_description: "Code" },
+  { name: "x_sequence", ttype: "integer", field_description: "Sequence" },
+  { name: "x_product_id", ttype: "many2one", relation: "product.product", on_delete: "set null", field_description: "Product" },
+];
+const PKG_ACTION_NAME = "Sales Packages";
+const PKG_MENU_NAME = "Sales Packages";
 
 const BOQ_MODEL = "x_boq_line";
 const BOQ_FIELDS = [
@@ -286,10 +306,11 @@ async function step064G() {
       default_code: p.code,
       sale_ok: true,
       purchase_ok: false,
-      // Goods, like the existing "Solar PV System NkWp" products. The price
-      // is set per quotation line by the calculator (story 064D), so the list
-      // price is a ₱1 placeholder following the catalogue's convention.
-      type: "consu",
+      // Goods, like the existing "Solar PV System NkWp" products (the
+      // interest line is a service). The price is set per quotation line by
+      // the calculator (story 064D), so the list price is a ₱1 placeholder
+      // following the catalogue's convention.
+      type: p.type,
       list_price: 1.0,
       description_sale: "Internal Calculator package line. The price on each quotation comes from the generated proposal.",
     };
@@ -303,6 +324,72 @@ async function step064G() {
       vals,
       describe: p.code,
     });
+  }
+
+  // Criterion 2 — the Sales Package model, its menu, and one record per
+  // package pointing at the product variant.
+  const pkgModelId = await ensure({
+    step: "064G",
+    model: "ir.model",
+    key: PKG_MODEL,
+    domain: [["model", "=", PKG_MODEL]],
+    vals: { name: "Sales Package", model: PKG_MODEL, state: "manual" },
+    describe: "manual model (Sales › Configuration › Sales Packages)",
+  });
+  if (!pkgModelId) { log("  (fields, access rule, menu and records follow once the model exists)"); return; }
+  for (const spec of PKG_MODEL_FIELDS) await ensureManualField("064G", PKG_MODEL, pkgModelId, spec);
+  const groupUser = await api.xmlid("base", "group_user");
+  const groupSalesManager = await api.xmlid("sales_team", "group_sale_manager").catch(() => null);
+  await ensure({
+    step: "064G",
+    model: "ir.model.access",
+    key: `${PKG_MODEL}_user`,
+    domain: [["model_id", "=", pkgModelId], ["name", "=", `${PKG_MODEL}_user`]],
+    vals: { name: `${PKG_MODEL}_user`, model_id: pkgModelId, group_id: groupUser, perm_read: true, perm_write: false, perm_create: false, perm_unlink: false },
+    describe: "internal users: read",
+  });
+  if (groupSalesManager) {
+    await ensure({
+      step: "064G",
+      model: "ir.model.access",
+      key: `${PKG_MODEL}_manager`,
+      domain: [["model_id", "=", pkgModelId], ["name", "=", `${PKG_MODEL}_manager`]],
+      vals: { name: `${PKG_MODEL}_manager`, model_id: pkgModelId, group_id: groupSalesManager, perm_read: true, perm_write: true, perm_create: true, perm_unlink: true },
+      describe: "sales managers: read/write/create/unlink",
+    });
+  }
+  const actionId = await ensure({
+    step: "064G",
+    model: "ir.actions.act_window",
+    key: PKG_ACTION_NAME,
+    domain: [["name", "=", PKG_ACTION_NAME], ["res_model", "=", PKG_MODEL]],
+    vals: { name: PKG_ACTION_NAME, res_model: PKG_MODEL, view_mode: "list,form" },
+    describe: "list,form window action",
+  });
+  const configMenu = await api.xmlid("sale", "menu_sale_config");
+  if (actionId) {
+    await ensure({
+      step: "064G",
+      model: "ir.ui.menu",
+      key: `Sales/Configuration/${PKG_MENU_NAME}`,
+      domain: [["name", "=", PKG_MENU_NAME], ["parent_id", "=", configMenu]],
+      vals: { name: PKG_MENU_NAME, parent_id: configMenu, action: `ir.actions.act_window,${actionId}`, sequence: 90 },
+      describe: "under Sales › Configuration",
+    });
+  }
+  let sequence = 10;
+  for (const p of PACKAGE_PRODUCTS) {
+    const tmpl = await api.one("product.template", [["name", "=", p.name], ["active", "in", [true, false]]], ["id", "product_variant_id"]);
+    const variantId = tmpl && Array.isArray(tmpl.product_variant_id) ? tmpl.product_variant_id[0] : null;
+    await ensure({
+      step: "064G",
+      model: PKG_MODEL,
+      key: p.name,
+      domain: [["x_name", "=", p.name]],
+      vals: { x_name: p.name, x_code: p.code, x_sequence: sequence, x_product_id: variantId },
+      describe: variantId ? `→ product.product ${variantId}` : "(product not found yet)",
+    });
+    sequence += 10;
   }
 }
 

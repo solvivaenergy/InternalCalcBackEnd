@@ -26,7 +26,9 @@ const inScope = (step) => !only || only.has(step);
 // Reverse of the apply order, and within a step: views before fields before
 // models, so nothing is referenced when it is removed.
 const STEP_ORDER = ["064L", "064B", "064E", "064I", "064G"];
-const MODEL_ORDER = ["ir.ui.view", "ir.actions.server", "ir.config_parameter", "ir.model.access", "ir.model.fields", "ir.model", "product.template"];
+// Sales Package records, their menu and window action go before the access
+// rules, fields and model they depend on (064G criterion 2).
+const MODEL_ORDER = ["x_sales_package", "ir.ui.menu", "ir.actions.act_window", "ir.ui.view", "ir.actions.server", "ir.config_parameter", "ir.model.access", "ir.model.fields", "ir.model", "product.template"];
 
 async function exists(model, id) {
   const rows = await api.searchRead(model, [["id", "=", id], ...(model === "product.template" ? [["active", "in", [true, false]]] : [])], ["id"], { limit: 1 });
@@ -42,7 +44,10 @@ for (const step of STEP_ORDER) {
   }
   const created = manifest.created.filter((c) => c.step === step && c.created);
   // Fields on sale.order must go before the x_boq_line model (the o2m points at it).
-  created.sort((a, b) => MODEL_ORDER.indexOf(a.model) - MODEL_ORDER.indexOf(b.model)
+  // Fields on sale.order and on the x_sales_package model must go before the
+  // x_boq_line model, which the o2m points at; an unknown model sorts last.
+  const rank = (m) => (MODEL_ORDER.indexOf(m) < 0 ? MODEL_ORDER.length : MODEL_ORDER.indexOf(m));
+  created.sort((a, b) => rank(a.model) - rank(b.model)
     || (a.model === "ir.model.fields" ? (a.key.startsWith("sale.order.") ? -1 : 1) - (b.key.startsWith("sale.order.") ? -1 : 1) : 0));
   for (const c of created) plan.push({ kind: "remove", step, ...c });
 }

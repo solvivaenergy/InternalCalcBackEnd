@@ -10,7 +10,7 @@ import {
   getAuditEvents,
 } from "./src/parametersService.js";
 import { getCrmContact } from "./src/crmContactService.js";
-import { createQuotationFromProposal } from "./src/odooQuotationService.js";
+import { createQuotationFromProposal, attachProposalPdf } from "./src/odooQuotationService.js";
 import {
   listUsers,
   createUser,
@@ -292,6 +292,29 @@ app.post("/api/odoo/quotation", async (req, res) => {
     return res.status(500).json({ error: "Quotation push failed." });
   }
 });
+
+// 064F — the proposal PDF for the quotation created above, as a raw
+// application/pdf body (up to 25 MB — the 1 MB JSON limit does not apply).
+// ?quoteRef= must match the quotation's proposal reference. Same session
+// and ODOO_QUOTATION_ENABLED rules as the create call.
+app.post(
+  "/api/odoo/quotation/:id/pdf",
+  express.raw({ type: "application/pdf", limit: "25mb" }),
+  async (req, res) => {
+    try {
+      const requestId = randomUUID();
+      const result = await attachProposalPdf(
+        { orderId: req.params.id, quoteRef: req.query.quoteRef, fileName: req.query.fileName, pdf: req.body },
+        bearerToken(req),
+        requestId,
+      );
+      return res.status(result.status).json(result.payload);
+    } catch (error) {
+      console.error("[odoo-quotation] pdf unexpected", error);
+      return res.status(500).json({ error: "PDF attach failed." });
+    }
+  },
+);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
