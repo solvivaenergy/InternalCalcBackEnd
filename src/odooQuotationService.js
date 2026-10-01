@@ -81,10 +81,12 @@ const CALC_FIELD_MAP = [
   ["x_calc_net_price", (p) => num(p.quote.netPrice)],
   ["x_calc_discount_amount", (p) => num(p.quote.discountAmount)],
   ["x_calc_promo_code", (p) => str(p.quote.promoCode, 64)],
-  ["x_calc_downpayment_pct", (p) => num(p.quote.downPaymentPct)],
+  // Percentages are stored as PERCENT (30, not 0.30 — user decision
+  // 2026-10-02); the calculator sends fractions.
+  ["x_calc_downpayment_pct", (p) => asPercent(p.quote.downPaymentPct)],
   ["x_calc_downpayment_amount", (p) => num(p.quote.downPaymentAmount)],
   ["x_calc_tenor_months", (p) => int(p.quote.tenorMonths)],
-  ["x_calc_interest_rate_pa", (p) => num(p.quote.interestRatePa)],
+  ["x_calc_interest_rate_pa", (p) => asPercent(p.quote.interestRatePa)],
   ["x_calc_monthly_amortization", (p) => num(p.quote.monthlyPayment)],
   ["x_calc_total_amount_due", (p) => num(p.quote.totalAmountDue)],
   ["x_calc_dst", (p) => num(p.quote.dst)],
@@ -109,6 +111,13 @@ function num(v) {
 function int(v) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : 0;
+}
+// A rate the calculator sends as a fraction (0.3) becomes a percent (30);
+// a value above 1 is taken to be a percent already. Two decimals.
+function asPercent(v) {
+  const n = num(v);
+  if (n <= 0) return 0;
+  return Math.round((n <= 1 ? n * 100 : n) * 100) / 100;
 }
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -257,6 +266,31 @@ export function paymentSchemeValues({ tenorMonths, downPaymentPct }) {
     ["x_studio_payment_scheme", isDirect ? "direct" : "rto"],
     ["x_studio_mode", isDirect ? "straight" : (num(downPaymentPct) > 0 ? "downpayment" : "nodown")],
   ];
+}
+
+// Pure: the Studio financing figures the form shows outside the calculator
+// tab (user decisions 2026-10-02):
+//   Downpayment group   x_studio_percentage   down payment as PERCENT (30)
+//                       x_studio_down_amount  down payment in pesos
+//   Payment Scheme      x_studio_tenor        months, RTO only
+//   Summary             x_studio_financed_amount  net price − down payment,
+//                                             RTO only (064S)
+// Returns [field, value] pairs; the caller writes only fields the database
+// has. Exported for unit checks.
+export function studioFinancingValues({ tenorMonths, downPaymentPct, downPaymentAmount, netPrice, amountFinanced } = {}) {
+  const tenor = int(tenorMonths);
+  const isDirect = tenor <= 0;
+  const pct = asPercent(downPaymentPct);
+  const dpAmount = num(downPaymentAmount);
+  const out = [];
+  if (pct > 0) out.push(["x_studio_percentage", pct]);
+  if (dpAmount > 0) out.push(["x_studio_down_amount", dpAmount]);
+  if (!isDirect) {
+    out.push(["x_studio_tenor", tenor]);
+    const financed = amountFinanced != null ? num(amountFinanced) : num(netPrice) - dpAmount;
+    if (financed > 0) out.push(["x_studio_financed_amount", financed]);
+  }
+  return out;
 }
 
 // ─── Package products (cached) ───────────────────────────────────────────────
@@ -569,17 +603,15 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       else warnings.push(`Odoo field ${field} is missing or has no "${value}" option; left at its default.`);
     }
 
-    // 064S — Financed Amount (Studio monetary): what AssetCo lends on an RTO
-    // quotation, the net price less the down payment (the engine's AH11).
-    if (!isDirect) {
-      const financed = proposal.quote.amountFinanced != null
-        ? num(proposal.quote.amountFinanced)
-        : num(proposal.quote.netPrice) - num(proposal.quote.downPaymentAmount);
-      if (!available.has("x_studio_financed_amount")) {
-        warnings.push("Odoo has no Financed Amount field (x_studio_financed_amount); left unset.");
-      } else if (financed > 0) {
-        vals.x_studio_financed_amount = financed;
-      }
+    // Downpayment group, Tenor and Financed Amount (Studio) from the
+    // calculator's financing — see studioFinancingValues.
+    const missingStudio = [];
+    for (const [field, value] of studioFinancingValues(proposal.quote)) {
+      if (available.has(field)) vals[field] = value;
+      else missingStudio.push(field);
+    }
+    if (missingStudio.length) {
+      warnings.push(`Odoo has no ${missingStudio.join(", ")} field(s); left unset.`);
     }
 
     if (available.has("x_boq_line_ids")) {
@@ -633,7 +665,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       const lines = [
         `Created from the Internal Calculator proposal <b>${escapeHtml(proposal.quoteRef)}</b> by ${escapeHtml(caller.email || "an unknown user")}.`,
         `Financing: ${escapeHtml(q.financingType || (isDirect ? "Direct Purchase" : "RTO"))}` +
-          (isDirect ? "" : `, ${tenor} months at ${escapeHtml(String(q.interestRatePa ?? ""))} p.a.`),
+          (isDirect ? "" : `, ${tenor} months at ${asPercent(q.interestRatePa).toFixed(2)}% p.a., ${asPercent(q.downPaymentPct).toFixed(0)}% down`),
         `Net price ₱${num(q.netPrice).toLocaleString("en-PH")}, down payment ₱${num(q.downPaymentAmount).toLocaleString("en-PH")}` +
           (isDirect ? "" : `, monthly ₱${num(q.monthlyPayment).toLocaleString("en-PH")}, total due ₱${num(q.totalAmountDueInclDst).toLocaleString("en-PH")}`) + ".",
         `Order lines: ${orderLineCount}. Bill of Quantities rows: ${boq.length}.`,
