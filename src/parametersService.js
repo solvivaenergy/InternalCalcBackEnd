@@ -626,7 +626,8 @@ export async function verifySession(accessToken) {
   if (error || !data?.user) {
     return { status: 401, error: "Invalid or expired session token" };
   }
-  return { userId: data.user.id };
+  // email (lower-cased) is what the Odoo services match a salesperson on.
+  return { userId: data.user.id, email: (data.user.email || "").trim().toLowerCase() };
 }
 
 // Any signed-in user may read the row (2026-09-27; it was public before).

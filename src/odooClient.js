@@ -118,6 +118,12 @@ export function searchRead(cfg, model, domain, fields, signal, extra = {}) {
   return executeKw(cfg, model, "search_read", [domain], { fields, ...extra }, signal);
 }
 
+// Case-insensitive exact match for a `=ilike` leaf: `_` and `%` are LIKE
+// wildcards, so a literal value has to escape them (and the escape itself).
+export function likeExact(s) {
+  return String(s).replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 // Odoo stores datetimes as naive UTC "YYYY-MM-DD HH:MM:SS" and dates as
 // "YYYY-MM-DD". Both helpers accept a Date or an ISO string and return null for
 // anything unparseable, so a bad client value never reaches the ORM as garbage.

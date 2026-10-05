@@ -21,6 +21,8 @@ import {
   odooTimeoutMs,
   searchRead,
 } from "./odooClient.js";
+import { normalisePhPhone } from "./phPhone.js";
+import { resolveSalesperson, salespersonPayload } from "./odooSalespersonService.js";
 
 // "Project Number" is the crm.lead record id — the instance has no
 // project-number field (a full 660-field dump of crm.lead has no
@@ -50,33 +52,9 @@ const AGENT_NUMBERS = new Set([
 ]);
 
 // ─── Phone normalisation ─────────────────────────────────────────────────────
-// The calculator's own validator (frontend src/lib/validation.js isValidPhPhone)
-// requires 11+ digits starting "09". Odoo's dominant storage format is "+639…"
-// (175,587 leads), which FAILS that validator — and formatPhPhone passes non-09
-// input through unchanged, so it cannot rescue it. Populating the raw Odoo value
-// would hand the rep a number they did not type, mark it invalid, and block
-// "Save changes". So normalise here, and return null rather than guess.
-//
-// Allowlist only: every shape not explicitly matched returns null so the rep
-// types it manually. Notably "0919 0916 155 - 09913005620" (22 digits) would
-// PASS isValidPhPhone verbatim and then be silently truncated by formatPhPhone,
-// so "passes the validator" is not on its own a safe test.
-export function normalisePhPhone(raw) {
-  if (!raw || typeof raw !== "string") return null;
-  // Multi-number fields are real ("+639437295737 /  0933 8664343"). Try each
-  // token, first success wins. NOT split on "-": that is the separator in the
-  // app's own display format, 0917-841-5976.
-  for (const token of raw.split(/\s*[/,;]\s*/)) {
-    let d = token.replace(/\D+/g, "");
-    if (d.startsWith("00")) d = d.slice(2);
-    let out = null;
-    if (d.length === 12 && d.startsWith("63")) out = `0${d.slice(2)}`;
-    else if (d.length === 11 && d.startsWith("09")) out = d;
-    else if (d.length === 10 && d.startsWith("9")) out = `0${d}`;
-    if (out) return out;
-  }
-  return null;
-}
+// Lives in phPhone.js since the lead's salesperson needed the same allowlist
+// (odooSalespersonService.js); re-exported here for existing importers.
+export { normalisePhPhone } from "./phPhone.js";
 
 // ─── Email salvage ───────────────────────────────────────────────────────────
 // Same regex the frontend form validates with, so this service never returns
@@ -130,6 +108,8 @@ const LEAD_FIELDS = [
   "email_from",
   "phone",
   "mobile",
+  // The assigned salesperson — the Solviva Agent on the proposal (2026-10-05).
+  "user_id",
 ];
 
 // ─── Public entry point ──────────────────────────────────────────────────────
@@ -236,6 +216,27 @@ export async function getCrmContact(projectNumber, accessToken) {
     .find((v) => v && v.toLowerCase() !== squash(name).toLowerCase());
   if (alternate) warnings.push("contact_name_differs");
 
+  // Who presents the proposal: the lead's assigned salesperson (else the
+  // caller's own Odoo user), with the same rule the quotation push applies to
+  // sale.order.user_id, so the agent on the PDF and the salesperson on the
+  // quotation are one person. Never fails the lookup — the customer fields are
+  // the point of this route — and gets its own timeout budget.
+  let salesperson = null;
+  try {
+    const resolved = await resolveSalesperson(
+      cfg,
+      { lead, callerEmail: session.email },
+      AbortSignal.timeout(odooTimeoutMs()),
+    );
+    salesperson = salespersonPayload(resolved);
+  } catch (err) {
+    console.error("[crm-contact] salesperson lookup failed", {
+      projectNumber: id,
+      reason: String(err && err.message).slice(0, 120),
+    });
+    warnings.push("salesperson_unavailable");
+  }
+
   // Deliberately minimal. crm.lead has 660 fields; a pass-through proxy would
   // ship pipeline, commission and internal-note data into the browser.
   return {
@@ -247,6 +248,9 @@ export async function getCrmContact(projectNumber, accessToken) {
       mobile: mobile || null,
       alternateName: alternate || null,
       warnings,
+      // { source: "lead" | "calculator-user" | "none", name, email, mobile,
+      //   warnings[] } or null when Odoo could not answer.
+      salesperson,
     },
   };
 }

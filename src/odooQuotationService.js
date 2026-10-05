@@ -35,8 +35,11 @@
 //     name in the calculator. The quotation points at the lead's partner.
 //   • Every PDF generation creates a NEW quotation (no upsert). client_order_ref
 //     carries the proposal reference so duplicates are visible, not hidden.
-//   • Salesperson = the signed-in calculator user, matched to res.users by
-//     email; falls back to the lead's own salesperson when there is no match.
+//   • Salesperson = the lead's ASSIGNED salesperson (crm.lead.user_id), else
+//     the signed-in calculator user matched to res.users by email. User
+//     decision 2026-10-05 — the proposal carries the assigned rep's name and
+//     number, so the quotation names the same person; until then the order
+//     was the reverse. One rule for both, in odooSalespersonService.js.
 //   • This call must never block the PDF. The frontend treats any failure as a
 //     warning banner, so this service returns structured errors, never throws.
 //
@@ -45,16 +48,18 @@
 // still creates the quotation and reports the skipped fields in `warnings`.
 // =============================================================================
 
-import { getSupabaseClient } from "./parametersService.js";
+import { verifySession } from "./parametersService.js";
 import {
   odooConfig,
   missingOdooEnv,
   odooTimeoutMs,
   executeKw,
   searchRead,
+  likeExact,
   toOdooDatetime,
   toOdooDateManila,
 } from "./odooClient.js";
+import { resolveSalesperson } from "./odooSalespersonService.js";
 
 const LEAD_ID_RE = /^[1-9]\d{0,8}$/;
 const MAX_BOQ_ROWS = 200;
@@ -124,11 +129,6 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[c]);
 }
-// Case-insensitive exact match for a LIKE pattern: `_` and `%` are wildcards.
-function likeExact(s) {
-  return String(s).replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
 // ─── Validation ──────────────────────────────────────────────────────────────
 // Returns { error } or { leadId, proposal, boq, orderLines }. Shapes are
 // checked here so nothing downstream has to defend against a malformed
@@ -206,20 +206,8 @@ function validateBody(body) {
 }
 
 // ─── Session ─────────────────────────────────────────────────────────────────
-// verifySession() in parametersService returns only the user id; the
-// salesperson mapping needs the email, so this resolves the user directly.
-async function resolveCaller(accessToken) {
-  if (!accessToken) return { status: 401, error: "Missing bearer token" };
-  let supabase;
-  try {
-    supabase = getSupabaseClient();
-  } catch (_) {
-    return { status: 500, error: "Auth is not configured." };
-  }
-  const { data, error } = await supabase.auth.getUser(accessToken);
-  if (error || !data?.user) return { status: 401, error: "Invalid or expired session token" };
-  return { userId: data.user.id, email: (data.user.email || "").trim().toLowerCase() };
-}
+// verifySession() in parametersService returns { userId, email }; the email is
+// the salesperson fallback and the author named in the chatter notes.
 
 // ─── Field availability (cached) ─────────────────────────────────────────────
 // fields_get once per process per database; the custom fields only appear
@@ -459,7 +447,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
   if (parsed.error) return { status: 400, payload: { error: parsed.error } };
   const { leadId, proposal, boq, orderLines } = parsed;
 
-  const caller = await resolveCaller(accessToken);
+  const caller = await verifySession(accessToken);
   if (caller.error) return { status: caller.status, payload: { error: caller.error } };
 
   // WRITE PATH IS OPT-IN. The ODOO_* credential is shared with the read-only
@@ -518,27 +506,16 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       };
     }
 
-    // 2. Salesperson: the signed-in calculator user, else the lead's own.
-    let userId = null;
-    let salespersonSource = "none";
-    if (caller.email) {
-      const users = await searchRead(
-        cfg,
-        "res.users",
-        ["&", ["active", "=", true], "|", ["login", "=ilike", likeExact(caller.email)], ["email", "=ilike", likeExact(caller.email)]],
-        ["id", "name"],
-        signal,
-        { limit: 1 },
-      );
-      if (Array.isArray(users) && users.length) {
-        userId = users[0].id;
-        salespersonSource = "calculator-user";
-      }
-    }
-    if (!userId && Array.isArray(lead.user_id)) {
-      userId = lead.user_id[0];
-      salespersonSource = "lead";
-      warnings.push(`No Odoo user matches ${caller.email || "the signed-in account"}; salesperson taken from the lead.`);
+    // 2. Salesperson: the lead's assigned rep, else the signed-in calculator
+    //    user — the rule the lead lookup also applies when it prefills the
+    //    Solviva Agent details, so the PDF and the quotation name one person.
+    const sp = await resolveSalesperson(cfg, { lead, callerEmail: caller.email }, signal);
+    const userId = sp.userId;
+    const salespersonSource = sp.source;
+    if (sp.source === "calculator-user") {
+      warnings.push("The lead has no assigned salesperson in Odoo; the quotation is assigned to your Odoo user.");
+    } else if (sp.source === "none") {
+      warnings.push(`The lead has no assigned salesperson and no Odoo user matches ${caller.email || "the signed-in account"}; Odoo will show the integration user as the salesperson.`);
     }
 
     // 3. Payment term by tenor (0 = Direct Purchase). The Recurring Plan and
@@ -725,7 +702,7 @@ export async function attachProposalPdf({ orderId, quoteRef, fileName, pdf }, ac
   }
   if (pdf.length > MAX_PDF_BYTES) return { status: 413, payload: { error: "PDF larger than 25 MB." } };
 
-  const caller = await resolveCaller(accessToken);
+  const caller = await verifySession(accessToken);
   if (caller.error) return { status: caller.status, payload: { error: caller.error } };
   if (String(process.env.ODOO_QUOTATION_ENABLED || "").toLowerCase() !== "true") {
     return { status: 503, payload: { error: "Saving quotations to Odoo is switched off on this server.", code: "push_disabled" } };
