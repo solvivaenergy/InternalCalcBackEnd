@@ -1,5 +1,58 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-10-06 — apply-dinuguan: production prerequisites as steps (064D, 064C); products copy staging
+
+### Scope
+
+- `scripts/odoo/apply-dinuguan.mjs`: two new steps. **064D** sets the "12%"
+  sale tax to *Included in Price* + *Affect Base of Subsequent Taxes* (as AJ
+  did on staging on 2026-09-18; previous values kept in the manifest) and
+  creates the company discount product (₱0 service, no tax) on
+  `res.company.sale_discount_product_id`. **064C** creates the seven
+  `sale.order.x_studio_*` header fields the quotation push writes (Payment
+  Scheme, Mode, Create Mode, Percentage, Amount, Tenor, Financed Amount) with
+  the staging labels, selection keys and tracking, four `ir.default` rows
+  (manual / direct / straight / 0) and a form group that is added only when no
+  other view already places the fields. `PACKAGE_PRODUCTS` now creates A and
+  B as services in the default category (copying AJ's staging products), C as
+  goods and D as a service in *Solar System*.
+- `rollback-dinuguan.mjs`: the new steps in reverse order, `ir.default` in the
+  removal order, data warning for the 064C columns, tax warning for 064D.
+- `verify-dinuguan.mjs`: 064D (tax, discount product) and 064C (fields,
+  selection keys, default Create Mode, rendered form) checks.
+- `docs/dinuguan-odoo-deployment.md`: the production differences found on
+  2026-10-06, the decisions, and the revised production plan (064L ships
+  with 064B; smoke on opportunity 52210).
+
+### Why
+
+A read-only probe of production on 2026-10-06 showed none of the staging-only
+configuration the integration relies on: the price-included tax (totals would
+come out 12% high), the discount product (promo lines skipped), the seven
+Studio fields (Create Mode stays Manual, Payment Scheme empty). None came from
+a sprint story. User decisions the same day: flip the tax, create the fields
+and the product as part of the deployment, copy the staging products, hide
+New Quotation in the same release.
+
+### Validation
+
+- `node --check` on the three scripts.
+- Dry run on staging (`--only 064G,064D,064C`): every record reported as
+  existing; the form group is skipped because Studio view 5229 already places
+  the fields. `verify-dinuguan.mjs --env-file .env.staging`: all checks pass,
+  including the new ones. The staging manifest was left untouched.
+- Dry run on production (`--skip 064B,064L`): lists the four products,
+  *Discount*, the tax change, the seven fields and four defaults, the two
+  models, and the rewrite of server action 1528 — nothing else.
+- Not exercised: creating the 064C fields and view on a database that lacks
+  them (staging has them; production is the first). The step is idempotent,
+  so a failure at the view is fixed by editing the arch and re-running.
+
+### Deployment notes
+
+- Production run-book in `docs/dinuguan-odoo-deployment.md`. The tax change
+  applies to every product and line carrying "12%" (accepted 2026-10-06).
+
 ## 2026-09-27 — `POST /api/public/estimate`: the website's numbers from the shared engine
 
 ### Scope

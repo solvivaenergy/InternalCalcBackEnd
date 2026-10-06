@@ -17,6 +17,11 @@
 // Stories covered (see docs/dinuguan-odoo-deployment.md):
 //   064G  the package products (A / B / C, plus "D. Interest" for 064S) and
 //         the Sales Package configuration model that points at them
+//   064D  what the order lines need: the "12%" sale tax price-included (as
+//         on the staging build) and the company's discount product
+//   064C  the quotation header fields the push fills — Payment Scheme, Mode,
+//         Tenor, Downpayment %, Amount, Financed Amount (064S), Create Mode
+//         (SOLSB-23) — their defaults, and a form group showing them
 //   064I  Bill of Quantities table on the quotation (x_boq_line)
 //   064E  calculator financing fields on sale.order + the bill-schedule
 //         automation anchored on the calculator's amortisation
@@ -32,7 +37,7 @@ import {
 } from "./rpc.mjs";
 
 const { flags } = parseArgs();
-const STEP_ORDER = ["064G", "064I", "064E", "064B", "064L"];
+const STEP_ORDER = ["064G", "064D", "064C", "064I", "064E", "064B", "064L"];
 const only = flags.only ? String(flags.only).split(",").map((s) => s.trim()) : null;
 const skip = new Set(flags.skip ? String(flags.skip).split(",").map((s) => s.trim()) : []);
 const steps = STEP_ORDER.filter((s) => (!only || only.includes(s)) && !skip.has(s));
@@ -44,14 +49,22 @@ const now = () => new Date().toISOString();
 
 // ─── Names and archs (the natural keys) ──────────────────────────────────────
 // Mirror of PACKAGE_PRODUCT_NAMES in src/odooQuotationService.js.
+//
+// Types and categories copy the STAGING set (user decision 2026-10-06):
+// A and B are the services Andrian Jim Cubillas created by hand on the
+// staging build on 2026-09-18 in the default category ("All"); C is the
+// Goods product this script made in "Solar System" on 2026-09-25 and D the
+// service it made there on 2026-10-01. Production has none of the four, so
+// this is what it gets. `solarSystemCategory: false` leaves the product in
+// Odoo's default category, as on staging.
 export const PACKAGE_PRODUCTS = [
-  { code: "IC-PKG-A", name: "A. Solar Package", type: "consu" },
-  { code: "IC-PKG-B", name: "B. Battery Package", type: "consu" },
-  { code: "IC-PKG-C", name: "C. Misc. Materials, Labor, Services & Other Adjustments", type: "consu" },
+  { code: "IC-PKG-A", name: "A. Solar Package", type: "service", solarSystemCategory: false },
+  { code: "IC-PKG-B", name: "B. Battery Package", type: "service", solarSystemCategory: false },
+  { code: "IC-PKG-C", name: "C. Misc. Materials, Labor, Services & Other Adjustments", type: "consu", solarSystemCategory: true },
   // 064S — the interest line of an RTO quotation. A service: nothing is
   // delivered. Taxes are left at the company default; Finance decides the
   // VAT treatment of interest on the product itself.
-  { code: "IC-PKG-D", name: "D. Interest", type: "service" },
+  { code: "IC-PKG-D", name: "D. Interest", type: "service", solarSystemCategory: true },
 ];
 
 // 064G criterion 2 — a "Sales Package" configuration model (Sales ›
@@ -103,6 +116,69 @@ const CALC_FIELDS = [
   { name: "x_calc_inverters", ttype: "char", field_description: "Inverters" },
   { name: "x_calc_agent_email", ttype: "char", field_description: "Calculator User" },
 ];
+
+// 064D — the sale tax the package products carry. On the staging build AJ set
+// it to "Included in Price" + "Affect Base of Subsequent Taxes" on 2026-09-18;
+// the calculator's VAT-inclusive subtotals rely on that. User decision
+// 2026-10-06: production gets the same. Natural key: name + sale + company 1.
+// NOTE: this is a property of the tax itself — every product and line that
+// carries "12%" is read as VAT-inclusive once it is set, not only quotations.
+const TAX_NAME = "12%";
+const TAX_WANTED = { price_include_override: "tax_included", include_base_amount: true };
+
+// 064C — the quotation header fields src/odooQuotationService.js writes on
+// create. Definitions copied from the staging build (ir.model.fields read
+// 2026-10-06): five made in Studio by AJ on 2026-09-11, Create Mode and
+// Financed Amount on 2026-09-30. Same technical names, labels, types,
+// selection keys and tracking, so the backend's selection checks pass.
+const STUDIO_FIELDS = [
+  { name: "x_studio_payment_scheme", ttype: "selection", field_description: "Payment Scheme", tracking: 1,
+    selection_ids: [[0, 0, { value: "direct", name: "Direct Purchase", sequence: 0 }], [0, 0, { value: "rto", name: "Rent to Own", sequence: 1 }]] },
+  { name: "x_studio_mode", ttype: "selection", field_description: "Mode", tracking: 1,
+    selection_ids: [[0, 0, { value: "downpayment", name: "Downpayment", sequence: 0 }], [0, 0, { value: "nodown", name: "No Downpayment", sequence: 1 }], [0, 0, { value: "straight", name: "Straight Payment", sequence: 2 }]] },
+  { name: "x_studio_create_mode", ttype: "selection", field_description: "Create Mode",
+    selection_ids: [[0, 0, { value: "manual", name: "Manual", sequence: 0 }], [0, 0, { value: "automatic", name: "Automatic", sequence: 1 }]] },
+  { name: "x_studio_percentage", ttype: "float", field_description: "Percentage", tracking: 1 },
+  { name: "x_studio_down_amount", ttype: "monetary", field_description: "Amount", currency_field: "currency_id" },
+  { name: "x_studio_tenor", ttype: "integer", field_description: "Tenor" },
+  { name: "x_studio_financed_amount", ttype: "monetary", field_description: "Financed Amount", currency_field: "currency_id" },
+];
+// Defaults as on staging (ir.default): a quotation made by hand is Manual,
+// Direct Purchase, Straight Payment, tenor 0; the push overrides them.
+const STUDIO_DEFAULTS = [
+  ["x_studio_create_mode", "manual"],
+  ["x_studio_payment_scheme", "direct"],
+  ["x_studio_mode", "straight"],
+  ["x_studio_tenor", 0],
+];
+const VIEW_SCHEME = "Internal Calculator: sale.order payment scheme fields";
+// Added only when no other view already places x_studio_payment_scheme (on
+// staging AJ's Studio customisation does). Same groups and visibility rules
+// as the staging layout for these seven fields, without the staging-only
+// fields around them (order type, payment mode, due dates, amortisation).
+const ARCH_SCHEME = `<data>
+  <xpath expr="//group[@name='sale_header']" position="after">
+    <group name="internal_calculator_scheme">
+      <group name="internal_calculator_scheme_left" string="Details">
+        <field name="x_studio_create_mode" widget="radio" options="{&quot;horizontal&quot;:true}" groups="base.group_no_one"/>
+      </group>
+      <group name="internal_calculator_scheme_right" string="Payment Scheme">
+        <field name="x_studio_payment_scheme" widget="radio" options="{&quot;horizontal&quot;:true}" readonly="state != 'draft'"/>
+        <field name="x_studio_mode" widget="radio" options="{&quot;horizontal&quot;:true}" readonly="state != 'draft'"/>
+        <field name="x_studio_tenor" invisible="x_studio_payment_scheme == 'direct'" required="x_studio_payment_scheme == 'rto'" readonly="state != 'draft'"/>
+      </group>
+    </group>
+    <group name="internal_calculator_downpayment">
+      <group name="internal_calculator_downpayment_left" string="Downpayment" invisible="x_studio_mode != 'downpayment'">
+        <field name="x_studio_percentage" widget="float"/>
+        <field name="x_studio_down_amount" string="Amount"/>
+      </group>
+      <group name="internal_calculator_downpayment_right" string="Summary">
+        <field name="x_studio_financed_amount" readonly="1" invisible="x_studio_create_mode != 'automatic'"/>
+      </group>
+    </group>
+  </xpath>
+</data>`;
 
 const VIEW_BOQ = "Internal Calculator: sale.order Bill of Quantities page";
 const VIEW_FIGURES = "Internal Calculator: sale.order calculator figures page";
@@ -306,23 +382,22 @@ async function step064G() {
       default_code: p.code,
       sale_ok: true,
       purchase_ok: false,
-      // Goods, like the existing "Solar PV System NkWp" products (the
-      // interest line is a service). The price is set per quotation line by
-      // the calculator (story 064D), so the list price is a ₱1 placeholder
-      // following the catalogue's convention.
+      // Type per PACKAGE_PRODUCTS (see the note there). The price is set per
+      // quotation line by the calculator (story 064D), so the list price is a
+      // ₱1 placeholder following the catalogue's convention.
       type: p.type,
       list_price: 1.0,
       description_sale: "Internal Calculator package line. The price on each quotation comes from the generated proposal.",
     };
     if ("is_storable" in productFields) vals.is_storable = false;
-    if (category) vals.categ_id = category.id;
+    if (category && p.solarSystemCategory) vals.categ_id = category.id;
     await ensure({
       step: "064G",
       model: "product.template",
       key: p.name,
       domain: [["name", "=", p.name], ["active", "in", [true, false]]],
       vals,
-      describe: p.code,
+      describe: `${p.code}, ${p.type === "service" ? "service" : "goods"}${p.solarSystemCategory && category ? ", Solar System" : ", default category"}`,
     });
   }
 
@@ -501,7 +576,99 @@ async function step064L() {
   await ensureView("064L", VIEW_HIDE_NEW_QUOTATION, "crm.lead", opporForm, ARCH_HIDE_NEW_QUOTATION, 100);
 }
 
-const STEPS = { "064G": step064G, "064I": step064I, "064E": step064E, "064B": step064B, "064L": step064L };
+// A global ir.default (no user, no company, no condition) for a field.
+// ir.default.set() is idempotent on Odoo's side, but the record id is what
+// rollback needs, so it is looked up after the call.
+async function ensureDefault(step, modelName, fieldName, value) {
+  const key = `${modelName}.${fieldName}`;
+  const domain = [["field_id.model", "=", modelName], ["field_id.name", "=", fieldName], ["user_id", "=", false], ["company_id", "=", false], ["condition", "=", false]];
+  const existing = await api.one("ir.default", domain, ["id", "json_value"]);
+  if (existing) {
+    const known = findCreated(manifest, "ir.default", key);
+    recordCreated(manifest, { model: "ir.default", id: existing.id, key, step, created: known ? known.created : false, at: known ? known.at : now() });
+    log(`  = ir.default ${key} = ${existing.json_value}`);
+    return existing.id;
+  }
+  if (!APPLY) { log(`  + would set ir.default ${key} = ${JSON.stringify(value)}`); return null; }
+  await api.call("ir.default", "set", [modelName, fieldName, value]);
+  const row = await api.one("ir.default", domain, ["id"]);
+  if (row) recordCreated(manifest, { model: "ir.default", id: row.id, key, step, created: true, at: now() });
+  log(`  + ir.default ${key} = ${JSON.stringify(value)}${row ? ` (id ${row.id})` : ""}`);
+  return row ? row.id : null;
+}
+
+async function step064D() {
+  log("064D — order-line prerequisites: price-included 12% tax, company discount product");
+
+  // The tax. Previous values go to the manifest so rollback can restore them.
+  const tax = await api.one("account.tax", [["name", "=", TAX_NAME], ["type_tax_use", "=", "sale"], ["company_id", "=", 1]], ["id", "name", ...Object.keys(TAX_WANTED)]);
+  if (!tax) {
+    log(`  ! sale tax "${TAX_NAME}" not found — the package products will carry the company default; check the VAT treatment by hand`);
+  } else {
+    const changes = Object.entries(TAX_WANTED).filter(([k, v]) => tax[k] !== v);
+    if (!changes.length) {
+      log(`  = account.tax ${tax.id} "${tax.name}" is already price-included`);
+    } else if (!APPLY) {
+      log(`  ~ would set account.tax ${tax.id} "${tax.name}": ${changes.map(([k, v]) => `${k} ${JSON.stringify(tax[k])} → ${JSON.stringify(v)}`).join(", ")}`);
+    } else {
+      for (const [k, v] of changes) recordModified(manifest, { model: "account.tax", id: tax.id, field: k, before: tax[k], after: v, step: "064D", at: now() });
+      await api.call("account.tax", "write", [[tax.id], Object.fromEntries(changes)]);
+      log(`  ~ account.tax ${tax.id} "${tax.name}": ${changes.map(([k, v]) => `${k} → ${JSON.stringify(v)}`).join(", ")} (previous values saved in the manifest)`);
+    }
+  }
+
+  // The company's discount product. The promo Discount lines land on
+  // res.company.sale_discount_product_id, which Odoo only fills the first
+  // time somebody applies a global discount through the Discount wizard
+  // (that is how staging got product 411 on 2026-09-18). Production has the
+  // "Discount on lines" group enabled but nobody has used the wizard, so the
+  // field is empty and the lines would be skipped. Same values the wizard
+  // uses (sale.order.discount._prepare_discount_product_values): a ₱0
+  // service with no taxes. Rollback restores the field and archives the
+  // product like any other created product.
+  const [company] = await api.call("res.company", "read", [[1]], { fields: ["name", "sale_discount_product_id"] });
+  if (company.sale_discount_product_id) {
+    log(`  = company discount product: ${company.sale_discount_product_id[1]} (product.product ${company.sale_discount_product_id[0]})`);
+    return;
+  }
+  const discountTmplId = await ensure({
+    step: "064D",
+    model: "product.template",
+    key: "Discount",
+    domain: [["name", "=", "Discount"], ["type", "=", "service"], ["active", "=", true], ["company_id", "in", [1, false]]],
+    vals: { name: "Discount", type: "service", invoice_policy: "order", list_price: 0.0, company_id: 1, taxes_id: false },
+    describe: "the Discount wizard's product (₱0 service, no tax) — becomes res.company.sale_discount_product_id",
+  });
+  if (!discountTmplId) { log("  ~ would set res.company 1 sale_discount_product_id to that product"); return; }
+  const [tmpl] = await api.call("product.template", "read", [[discountTmplId]], { fields: ["product_variant_id"] });
+  const variantId = Array.isArray(tmpl.product_variant_id) ? tmpl.product_variant_id[0] : null;
+  if (!APPLY) { log(`  ~ would set res.company 1 sale_discount_product_id → product.product ${variantId}`); return; }
+  if (variantId) {
+    recordModified(manifest, { model: "res.company", id: 1, field: "sale_discount_product_id", before: false, after: variantId, step: "064D", at: now() });
+    await api.call("res.company", "write", [[1], { sale_discount_product_id: variantId }]);
+    log(`  ~ res.company 1 (${company.name}) sale_discount_product_id → product.product ${variantId}`);
+  }
+}
+
+async function step064C() {
+  log("064C — quotation header fields the push fills (Payment Scheme, Downpayment, Create Mode, Financed Amount)");
+  const saleOrderModelId = await api.modelId("sale.order");
+  let allFields = true;
+  for (const spec of STUDIO_FIELDS) {
+    const id = await ensureManualField("064C", "sale.order", saleOrderModelId, spec);
+    if (!id) allFields = false;
+  }
+  for (const [field, value] of STUDIO_DEFAULTS) await ensureDefault("064C", "sale.order", field, value);
+  if (!allFields) { log("  (form group follows once the fields exist)"); return; }
+  const placed = await api.searchRead("ir.ui.view",
+    [["model", "=", "sale.order"], ["active", "=", true], ["name", "!=", VIEW_SCHEME], ["arch_db", "ilike", "x_studio_payment_scheme"]],
+    ["id", "name"], { limit: 1 });
+  if (placed.length) { log(`  = fields already placed by view ${placed[0].id} "${placed[0].name}" — no form group added`); return; }
+  const baseForm = await api.xmlid("sale", "view_order_form");
+  await ensureView("064C", VIEW_SCHEME, "sale.order", baseForm, ARCH_SCHEME, 92);
+}
+
+const STEPS = { "064G": step064G, "064D": step064D, "064C": step064C, "064I": step064I, "064E": step064E, "064B": step064B, "064L": step064L };
 
 try {
   for (const s of steps) {

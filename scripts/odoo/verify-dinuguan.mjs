@@ -28,9 +28,6 @@ for (const name of PACKAGE_NAMES) {
   if (!row) bad(`missing product "${name}"`);
   else ok(`${name} (id ${row.id}, ${row.type}, ₱${row.list_price}, ${row.categ_id ? row.categ_id[1] : "no category"}, taxes ${JSON.stringify(row.taxes_id)}${row.active ? "" : ", ARCHIVED"})`);
 }
-const discountProduct = await api.one("res.company", [["id", "=", 1]], ["sale_discount_product_id"]);
-if (discountProduct && discountProduct.sale_discount_product_id) ok(`company discount product: ${discountProduct.sale_discount_product_id[1]} (id ${discountProduct.sale_discount_product_id[0]})`);
-else bad("company has no sale_discount_product_id (064D discount lines need it)");
 console.log("064G — Sales Package model");
 const pkgModel = await api.one("ir.model", [["model", "=", "x_sales_package"]], ["id"]);
 if (!pkgModel) bad("model x_sales_package missing");
@@ -54,6 +51,51 @@ else {
   const menu = await api.one("ir.ui.menu", [["name", "=", "Sales Packages"]], ["id", "complete_name"]);
   if (menu) ok(`menu ${menu.complete_name} (id ${menu.id})`); else bad("menu Sales › Configuration › Sales Packages missing");
 }
+
+// 064D
+console.log("064D — order-line prerequisites");
+const tax12 = await api.one("account.tax", [["name", "=", "12%"], ["type_tax_use", "=", "sale"], ["company_id", "=", 1]], ["id", "price_include_override", "include_base_amount"]);
+if (!tax12) bad('sale tax "12%" not found');
+else if (tax12.price_include_override === "tax_included") ok(`tax "12%" (id ${tax12.id}) is price-included${tax12.include_base_amount ? ", affects base of subsequent taxes" : ""}`);
+else bad(`tax "12%" (id ${tax12.id}) is NOT price-included (${JSON.stringify(tax12.price_include_override)}) — 064D order totals would come out 12% high`);
+const discountProduct = await api.one("res.company", [["id", "=", 1]], ["sale_discount_product_id"]);
+if (discountProduct && discountProduct.sale_discount_product_id) ok(`company discount product: ${discountProduct.sale_discount_product_id[1]} (id ${discountProduct.sale_discount_product_id[0]})`);
+else bad("company has no sale_discount_product_id (064D discount lines need it)");
+
+// 064C
+console.log("064C — quotation header fields (Payment Scheme, Downpayment, Create Mode, Financed Amount)");
+const STUDIO_EXPECTED = {
+  x_studio_payment_scheme: ["selection", ["direct", "rto"]],
+  x_studio_mode: ["selection", ["downpayment", "nodown", "straight"]],
+  x_studio_create_mode: ["selection", ["manual", "automatic"]],
+  x_studio_percentage: ["float"],
+  x_studio_down_amount: ["monetary"],
+  x_studio_tenor: ["integer"],
+  x_studio_financed_amount: ["monetary"],
+};
+const studioMeta = await api.call("sale.order", "fields_get", [Object.keys(STUDIO_EXPECTED)], { attributes: ["type", "selection"] });
+for (const [name, [ttype, keys]] of Object.entries(STUDIO_EXPECTED)) {
+  const f = studioMeta[name];
+  if (!f) { bad(`sale.order.${name} missing`); continue; }
+  if (f.type !== ttype) { bad(`sale.order.${name} is ${f.type}, expected ${ttype}`); continue; }
+  if (!keys) { ok(`sale.order.${name} ${ttype}`); continue; }
+  const have = (f.selection || []).map((s) => s[0]);
+  const missing = keys.filter((k) => !have.includes(k));
+  if (missing.length) bad(`sale.order.${name} lacks option(s) ${missing.join(", ")} (has ${have.join(", ") || "none"})`);
+  else ok(`sale.order.${name} ${ttype} [${have.join(", ")}]`);
+}
+const createModeDefault = await api.one("ir.default", [["field_id.model", "=", "sale.order"], ["field_id.name", "=", "x_studio_create_mode"], ["user_id", "=", false], ["company_id", "=", false]], ["json_value"]);
+if (createModeDefault && createModeDefault.json_value === '"manual"') ok("default Create Mode = manual (hand-made quotations stay Manual)");
+else bad(`default Create Mode is ${createModeDefault ? createModeDefault.json_value : "unset"} (expected "manual")`);
+try {
+  const soView = await api.call("sale.order", "get_views", [[[false, "form"]]], {});
+  const arch = soView.views.form.arch || "";
+  const visible = ["x_studio_payment_scheme", "x_studio_mode", "x_studio_tenor", "x_studio_percentage", "x_studio_down_amount", "x_studio_financed_amount"];
+  const shown = visible.filter((n) => arch.includes(`name="${n}"`));
+  if (shown.length === visible.length) ok("quotation form shows Payment Scheme, Mode, Tenor, Percentage, Amount and Financed Amount");
+  else bad(`quotation form is missing ${visible.filter((n) => !shown.includes(n)).join(", ")}`);
+  (arch.includes('name="x_studio_create_mode"') ? ok : info)("Create Mode on the form (debug-mode users only, as on staging)");
+} catch (err) { bad(`sale.order form failed to render: ${err.message}`); }
 
 // 064I
 console.log("064I — Bill of Quantities");
@@ -113,7 +155,7 @@ if (btnView && btnView.active) ok(`button view (id ${btnView.id})`); else bad("b
 // 064L
 console.log("064L — hide New Quotation");
 const hideView = await api.one("ir.ui.view", [["name", "=", "Internal Calculator: crm.lead hide New Quotation"]], ["id", "active"]);
-if (hideView && hideView.active) ok(`hide view (id ${hideView.id})`); else info("hide view not applied (expected until 064C is live)");
+if (hideView && hideView.active) ok(`hide view (id ${hideView.id})`); else info("hide view not applied (expected until the quotation push and the Generate Proposal button are live)");
 
 // Rendered opportunity form
 console.log("crm.lead form as the browser receives it");

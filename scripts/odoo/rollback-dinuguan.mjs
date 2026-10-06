@@ -25,10 +25,11 @@ const inScope = (step) => !only || only.has(step);
 
 // Reverse of the apply order, and within a step: views before fields before
 // models, so nothing is referenced when it is removed.
-const STEP_ORDER = ["064L", "064B", "064E", "064I", "064G"];
+const STEP_ORDER = ["064L", "064B", "064E", "064I", "064C", "064D", "064G"];
 // Sales Package records, their menu and window action go before the access
-// rules, fields and model they depend on (064G criterion 2).
-const MODEL_ORDER = ["x_sales_package", "ir.ui.menu", "ir.actions.act_window", "ir.ui.view", "ir.actions.server", "ir.config_parameter", "ir.model.access", "ir.model.fields", "ir.model", "product.template"];
+// rules, fields and model they depend on (064G criterion 2). ir.default rows
+// (064C) go before the fields they default.
+const MODEL_ORDER = ["x_sales_package", "ir.ui.menu", "ir.actions.act_window", "ir.ui.view", "ir.actions.server", "ir.config_parameter", "ir.default", "ir.model.access", "ir.model.fields", "ir.model", "product.template"];
 
 async function exists(model, id) {
   const rows = await api.searchRead(model, [["id", "=", id], ...(model === "product.template" ? [["active", "in", [true, false]]] : [])], ["id"], { limit: 1 });
@@ -65,6 +66,13 @@ if (plan.some((p) => p.model === "ir.model" || (p.model === "ir.model.fields" &&
   let boqRows = null;
   try { boqRows = await api.call("x_boq_line", "search_count", [[]]); } catch (_) { /* model gone already */ }
   console.log(`\nDATA WARNING: ${quotes ?? "?"} quotation(s) carry calculator figures and ${boqRows ?? "?"} BOQ row(s) exist. Removing the fields/model drops them.`);
+}
+if (plan.some((p) => p.model === "ir.model.fields" && p.key.startsWith("sale.order.x_studio_"))) {
+  const schemes = await api.call("sale.order", "search_count", [[["x_studio_payment_scheme", "!=", false]]]).catch(() => null);
+  console.log(`\nDATA WARNING: ${schemes ?? "?"} quotation(s) carry a Payment Scheme / Downpayment / Create Mode value (064C fields). Removing the fields drops those columns for ALL quotations, hand-made ones included.`);
+}
+if (plan.some((p) => p.kind === "restore" && p.model === "account.tax")) {
+  console.log(`\nTAX WARNING: restoring the "12%" tax to tax-excluded changes how every open quotation and unposted invoice that carries it is totalled, not only the calculator's.`);
 }
 if (!APPLY) { console.log("\nPlan only. Re-run with --yes to execute."); process.exit(0); }
 
