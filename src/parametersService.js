@@ -626,14 +626,34 @@ export async function verifySession(accessToken) {
   if (error || !data?.user) {
     return { status: 401, error: "Invalid or expired session token" };
   }
-  return { userId: data.user.id };
+  // email (lower-cased) is what the Odoo services match a salesperson on.
+  return { userId: data.user.id, email: (data.user.email || "").trim().toLowerCase() };
 }
 
-export async function getParameters() {
+// Any signed-in user may read the row (2026-09-27; it was public before).
+// Returns { status, payload } like putParameters so server.js treats the two
+// alike. Local JSON mode skips the check: the frontend's local fallback
+// session cannot mint a Supabase JWT, and that mode is already refused
+// outside NODE_ENV=development.
+export async function getParameters(accessToken) {
+  assertLocalJsonStorage();
+  if (isLocalJsonStorage()) {
+    return { status: 200, payload: await readLocalJsonPayload() };
+  }
+  const session = await verifySession(accessToken);
+  if (session.error) {
+    return { status: session.status, payload: { error: session.error } };
+  }
+  const supabase = getSupabaseClient();
+  return { status: 200, payload: await readCurrentPayload(supabase) };
+}
+
+// The row for server-side callers that decide access themselves (the estimate
+// endpoint checks its shared key). Service-role read, no session.
+export async function readParametersPayload() {
   assertLocalJsonStorage();
   if (isLocalJsonStorage()) return await readLocalJsonPayload();
-  const supabase = getSupabaseClient();
-  return await readCurrentPayload(supabase);
+  return await readCurrentPayload(getSupabaseClient());
 }
 
 export async function putParameters(

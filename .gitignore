@@ -5,3 +5,7 @@ node_modules/
 .DS_Store
 # Keep the local parameter database trackable and reviewable.
 data/parameter-audit.local.jsonl
+# Engine parity captures and payloads hold COGS and margins; pack output is
+# a build artefact (the release workflow attaches it to the GitHub Release).
+packages/calc-engine/parity/*.json
+packages/calc-engine/*.tgz

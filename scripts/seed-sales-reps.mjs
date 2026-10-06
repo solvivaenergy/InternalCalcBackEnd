@@ -97,12 +97,12 @@ const REPS = [
   {
     name: "Arianne Kate Olazo",
     email: "arianne.olazo@solvivaenergy.com",
-    mobile: "",
+    mobile: "09171138224",   // supplied 2026-10-05; matches her Odoo user
   },
   {
     name: "Jane Romyer Ann Castro",
     email: "jane.castro@solvivaenergy.com",
-    mobile: "09452719828",
+    mobile: "09171901478",   // was 09452719828; supplied 2026-10-05, matches her Odoo user
   },
   {
     name: "Katrina Medina",

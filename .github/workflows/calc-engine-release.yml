@@ -1,0 +1,45 @@
+name: Release calc-engine
+
+# Publishes packages/calc-engine as a tarball on a GitHub Release whenever a
+# tag `calc-engine-v<version>` is pushed. The Internal Calculator frontend
+# depends on that tarball's URL (this repo is public, so `npm ci` fetches it
+# with no token). The tag's version must equal the package's version.
+
+on:
+  push:
+    tags: ['calc-engine-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check the tag matches package.json
+        working-directory: packages/calc-engine
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#calc-engine-v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "packages/calc-engine/package.json is $PKG but the tag says $TAG"
+            exit 1
+          fi
+
+      - name: Pack
+        working-directory: packages/calc-engine
+        run: npm pack
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" packages/calc-engine/*.tgz \
+            --title "calc-engine ${GITHUB_REF_NAME#calc-engine-v}" \
+            --notes "Engine tarball for InternalCalcFrontEnd (\`@solviva/calc-engine\` in its package.json) and this backend. See packages/calc-engine/README.md."

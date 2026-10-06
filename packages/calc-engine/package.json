@@ -1,0 +1,20 @@
+{
+  "name": "@solviva/calc-engine",
+  "version": "1.1.0",
+  "description": "Solviva solar sizing and pricing engine — the one implementation behind the Internal Calculator and the website estimate",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./*"
+  },
+  "files": [
+    "*.js",
+    "data/*.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
