@@ -1,0 +1,640 @@
+{
+  "db": "solvivaenergy-solviva-odoo-v18-main-30096417",
+  "url": "https://solvivaenergy-sh.odoo.com",
+  "created": [
+    {
+      "model": "product.template",
+      "id": 413,
+      "key": "A. Solar Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:09.363Z"
+    },
+    {
+      "model": "product.template",
+      "id": 414,
+      "key": "B. Battery Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:11.814Z"
+    },
+    {
+      "model": "product.template",
+      "id": 415,
+      "key": "C. Misc. Materials, Labor, Services & Other Adjustments",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:12.348Z"
+    },
+    {
+      "model": "product.template",
+      "id": 416,
+      "key": "D. Interest",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:14.822Z"
+    },
+    {
+      "model": "ir.model",
+      "id": 1365,
+      "key": "x_sales_package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:15.812Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23236,
+      "key": "x_sales_package.x_name",
+      "step": "064G",
+      "created": false,
+      "at": "2026-10-06T11:49:16.261Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23244,
+      "key": "x_sales_package.x_code",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:17.065Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23246,
+      "key": "x_sales_package.x_sequence",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:18.361Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23248,
+      "key": "x_sales_package.x_product_id",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:19.613Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1816,
+      "key": "x_sales_package_user",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:20.395Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1817,
+      "key": "x_sales_package_manager",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:20.871Z"
+    },
+    {
+      "model": "ir.actions.act_window",
+      "id": 1724,
+      "key": "Sales Packages",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:21.315Z"
+    },
+    {
+      "model": "ir.ui.menu",
+      "id": 871,
+      "key": "Sales/Configuration/Sales Packages",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:21.868Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 1,
+      "key": "A. Solar Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:22.383Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 2,
+      "key": "B. Battery Package",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:22.516Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 3,
+      "key": "C. Misc. Materials, Labor, Services & Other Adjustments",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:22.650Z"
+    },
+    {
+      "model": "x_sales_package",
+      "id": 4,
+      "key": "D. Interest",
+      "step": "064G",
+      "created": true,
+      "at": "2026-10-06T11:49:22.785Z"
+    },
+    {
+      "model": "product.template",
+      "id": 417,
+      "key": "Discount",
+      "step": "064D",
+      "created": true,
+      "at": "2026-10-06T11:49:23.123Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23250,
+      "key": "sale.order.x_studio_payment_scheme",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:28.226Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23254,
+      "key": "sale.order.x_studio_mode",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:29.445Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23256,
+      "key": "sale.order.x_studio_create_mode",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:32.621Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23258,
+      "key": "sale.order.x_studio_percentage",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:36.236Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23260,
+      "key": "sale.order.x_studio_down_amount",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:37.352Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23262,
+      "key": "sale.order.x_studio_tenor",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:38.457Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23264,
+      "key": "sale.order.x_studio_financed_amount",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:39.638Z"
+    },
+    {
+      "model": "ir.default",
+      "id": 107,
+      "key": "sale.order.x_studio_create_mode",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:40.567Z"
+    },
+    {
+      "model": "ir.default",
+      "id": 108,
+      "key": "sale.order.x_studio_payment_scheme",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:42.368Z"
+    },
+    {
+      "model": "ir.default",
+      "id": 109,
+      "key": "sale.order.x_studio_mode",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:42.869Z"
+    },
+    {
+      "model": "ir.default",
+      "id": 110,
+      "key": "sale.order.x_studio_tenor",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:43.343Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5257,
+      "key": "Internal Calculator: sale.order payment scheme fields",
+      "step": "064C",
+      "created": true,
+      "at": "2026-10-06T11:49:43.559Z"
+    },
+    {
+      "model": "ir.model",
+      "id": 1367,
+      "key": "x_boq_line",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:44.314Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23266,
+      "key": "x_boq_line.x_name",
+      "step": "064I",
+      "created": false,
+      "at": "2026-10-06T11:49:44.736Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23274,
+      "key": "x_boq_line.x_sale_order_id",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:45.480Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23276,
+      "key": "x_boq_line.x_sequence",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:46.692Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23278,
+      "key": "x_boq_line.x_package",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:47.867Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23280,
+      "key": "x_boq_line.x_product",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:49.038Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23282,
+      "key": "x_boq_line.x_quantity",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:50.222Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23284,
+      "key": "x_boq_line.x_unit",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:51.442Z"
+    },
+    {
+      "model": "ir.model.access",
+      "id": 1818,
+      "key": "x_boq_line_user",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:51.959Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23286,
+      "key": "sale.order.x_boq_line_ids",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:53.266Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5258,
+      "key": "Internal Calculator: sale.order Bill of Quantities page",
+      "step": "064I",
+      "created": true,
+      "at": "2026-10-06T11:49:53.869Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23288,
+      "key": "sale.order.x_calc_proposal_ref",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:49:54.557Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23290,
+      "key": "sale.order.x_calc_generated_at",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:49:56.091Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23292,
+      "key": "sale.order.x_calc_financing_type",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:49:57.314Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23294,
+      "key": "sale.order.x_calc_net_price",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:49:58.554Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23296,
+      "key": "sale.order.x_calc_discount_amount",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:49:59.943Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23298,
+      "key": "sale.order.x_calc_promo_code",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:01.266Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23300,
+      "key": "sale.order.x_calc_downpayment_pct",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:02.565Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23302,
+      "key": "sale.order.x_calc_downpayment_amount",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:03.865Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23304,
+      "key": "sale.order.x_calc_tenor_months",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:05.093Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23306,
+      "key": "sale.order.x_calc_interest_rate_pa",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:06.334Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23308,
+      "key": "sale.order.x_calc_monthly_amortization",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:07.525Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23310,
+      "key": "sale.order.x_calc_total_amount_due",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:08.694Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23312,
+      "key": "sale.order.x_calc_dst",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:09.893Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23314,
+      "key": "sale.order.x_calc_total_amount_due_incl_dst",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:11.045Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23316,
+      "key": "sale.order.x_calc_system_kwp",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:12.176Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23318,
+      "key": "sale.order.x_calc_panel_count",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:13.330Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23320,
+      "key": "sale.order.x_calc_battery_kwh",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:14.492Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23322,
+      "key": "sale.order.x_calc_inverters",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:16.724Z"
+    },
+    {
+      "model": "ir.model.fields",
+      "id": 23324,
+      "key": "sale.order.x_calc_agent_email",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:17.950Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5259,
+      "key": "Internal Calculator: sale.order calculator figures page",
+      "step": "064E",
+      "created": true,
+      "at": "2026-10-06T11:50:18.513Z"
+    }
+  ],
+  "modified": [
+    {
+      "model": "account.tax",
+      "id": 3,
+      "field": "price_include_override",
+      "before": false,
+      "after": "tax_included",
+      "step": "064D",
+      "at": "2026-10-06T11:49:22.832Z"
+    },
+    {
+      "model": "account.tax",
+      "id": 3,
+      "field": "include_base_amount",
+      "before": false,
+      "after": true,
+      "step": "064D",
+      "at": "2026-10-06T11:49:22.832Z"
+    },
+    {
+      "model": "res.company",
+      "id": 1,
+      "field": "sale_discount_product_id",
+      "before": false,
+      "after": 413,
+      "step": "064D",
+      "at": "2026-10-06T11:49:27.428Z"
+    },
+    {
+      "model": "ir.actions.server",
+      "id": 1528,
+      "field": "code",
+      "before": "# Available variables:\n#  - env: environment on which the action is triggered\n#  - model: model of the record on which the action is triggered; is a void recordset\n#  - record: record on which the action is triggered; may be void\n#  - records: recordset of all records on which the action is triggered in multi-mode; may be void\n#  - time, datetime, dateutil, timezone: useful Python libraries\n#  - float_compare: utility function to compare floats based on specific precision\n#  - b64encode, b64decode: functions to encode/decode binary data\n#  - log: log(message, level='info'): logging function to record debug information in ir.logging table\n#  - _logger: _logger.info(message): logger to emit messages in server logs\n#  - UserError: exception class for raising user-facing warning messages\n#  - Command: x2many commands namespace\n# To return an action, assign: action = {...}\n\n# We use the pre-loaded dateutil, so no 'import' statement is needed!\n\nif record.payment_term_id:\n    term_name = record.payment_term_id.name.lower()\n    \n    # SCENARIO A: Direct Purchase\n    if 'direct' in term_name:\n        # Use .update() instead of the equals sign to bypass the STORE_ATTR error\n        record.update({\n            'plan_id': False,\n            'end_date': False\n        })\n        \n    # SCENARIO B: Rent-to-Own\n    else:\n        # Figure out how many months based on the payment term name\n        months_to_add = 0\n        if '6' in term_name: months_to_add = 6\n        elif '12' in term_name: months_to_add = 12\n        elif '24' in term_name: months_to_add = 24\n        elif '36' in term_name: months_to_add = 36\n        elif '48' in term_name: months_to_add = 48\n        elif '60' in term_name: months_to_add = 60\n        \n        if months_to_add > 0:\n            vals_to_update = {}\n            \n            # 1. Apply the Monthly plan\n            if not record.plan_id:\n                monthly_plan = env['sale.subscription.plan'].search([\n                    ('billing_period_value', '=', 1), \n                    ('billing_period_unit', '=', 'month')\n                ], limit=1)\n                \n                if monthly_plan:\n                    vals_to_update['plan_id'] = monthly_plan.id\n                    \n            # 2. Set the end date using the pre-loaded dateutil library\n            if record.date_order:\n                vals_to_update['end_date'] = record.date_order + dateutil.relativedelta.relativedelta(months=months_to_add)\n            \n            # Apply all updates at once safely\n            if vals_to_update:\n                record.update(vals_to_update)",
+      "after": "# internal_calculator:064E — managed by InternalCalcBackEnd/scripts/odoo/apply-dinuguan.mjs.\n# Edit the script and re-apply rather than editing here; rollback restores the\n# previous code from the manifest.\n#\n# 1. Direct Purchase clears the recurring plan and end date.\n# 2. Rent-to-Own: the tenor comes from the calculator (x_calc_tenor_months)\n#    when present, else from the FIRST number in the payment-term name.\n# 3. The recurring line is anchored on the calculator's own monthly\n#    amortisation, which already nets out the down payment and carries the\n#    interest, so the bill schedule bills exactly what the proposal printed.\n\nterm = record.payment_term_id\nterm_name = (term.name or '').lower() if term else ''\nis_direct = 'direct' in term_name\n\nif term:\n    if is_direct:\n        record.update({'plan_id': False, 'end_date': False})\n    else:\n        months = int(record.x_calc_tenor_months or 0)\n        if months <= 0:\n            digits = ''\n            for ch in term_name:\n                digits += ch if ch.isdigit() else ' '\n            parts = digits.split()\n            months = int(parts[0]) if parts else 0\n        if months > 0:\n            vals = {}\n            if not record.plan_id:\n                plan = env['sale.subscription.plan'].search([('name', '=ilike', 'Monthly Rent-to-Own')], limit=1)\n                if not plan:\n                    plan = env['sale.subscription.plan'].search([\n                        ('billing_period_value', '=', 1),\n                        ('billing_period_unit', '=', 'month'),\n                    ], limit=1)\n                if plan:\n                    vals['plan_id'] = plan.id\n            if record.date_order:\n                vals['end_date'] = record.date_order + dateutil.relativedelta.relativedelta(months=months)\n            if vals:\n                record.update(vals)\n\namort = record.x_calc_monthly_amortization or 0.0\nif amort > 0 and not is_direct:\n    recurring = record.order_line.filtered(lambda l: l.recurring_invoice and not l.display_type)\n    if len(recurring) == 1 and abs(recurring.price_unit - amort) > 0.005:\n        recurring.update({'price_unit': amort})\n",
+      "step": "064E",
+      "at": "2026-10-06T11:50:18.597Z"
+    }
+  ],
+  "steps": {
+    "064G": {
+      "lastRun": "2026-10-06T11:49:22.785Z",
+      "applied": true
+    },
+    "064D": {
+      "lastRun": "2026-10-06T11:49:27.514Z",
+      "applied": true
+    },
+    "064C": {
+      "lastRun": "2026-10-06T11:49:43.559Z",
+      "applied": true
+    },
+    "064I": {
+      "lastRun": "2026-10-06T11:49:53.869Z",
+      "applied": true
+    },
+    "064E": {
+      "lastRun": "2026-10-06T11:50:18.644Z",
+      "applied": true
+    }
+  },
+  "runs": [
+    {
+      "at": "2026-10-06T11:49:09.064Z",
+      "steps": [
+        "064G",
+        "064D",
+        "064C",
+        "064I",
+        "064E"
+      ],
+      "apply": true,
+      "calculatorUrl": "https://internalcalc.solvivaenergy.com",
+      "actions": [
+        "064G — package products",
+        "  category: Solar System (id 19)",
+        "  + created product.template \"A. Solar Package\" (id 413)",
+        "  + created product.template \"B. Battery Package\" (id 414)",
+        "  + created product.template \"C. Misc. Materials, Labor, Services & Other Adjustments\" (id 415)",
+        "  + created product.template \"D. Interest\" (id 416)",
+        "  + created ir.model \"x_sales_package\" (id 1365)",
+        "  = ir.model.fields \"x_sales_package.x_name\" exists (id 23236)",
+        "  + created ir.model.fields \"x_sales_package.x_code\" (id 23244)",
+        "  + created ir.model.fields \"x_sales_package.x_sequence\" (id 23246)",
+        "  + created ir.model.fields \"x_sales_package.x_product_id\" (id 23248)",
+        "  + created ir.model.access \"x_sales_package_user\" (id 1816)",
+        "  + created ir.model.access \"x_sales_package_manager\" (id 1817)",
+        "  + created ir.actions.act_window \"Sales Packages\" (id 1724)",
+        "  + created ir.ui.menu \"Sales/Configuration/Sales Packages\" (id 871)",
+        "  + created x_sales_package \"A. Solar Package\" (id 1)",
+        "  + created x_sales_package \"B. Battery Package\" (id 2)",
+        "  + created x_sales_package \"C. Misc. Materials, Labor, Services & Other Adjustments\" (id 3)",
+        "  + created x_sales_package \"D. Interest\" (id 4)",
+        "064D — order-line prerequisites: price-included 12% tax, company discount product",
+        "  ~ account.tax 3 \"12%\": price_include_override → \"tax_included\", include_base_amount → true (previous values saved in the manifest)",
+        "  + created product.template \"Discount\" (id 417)",
+        "  ~ res.company 1 (Solviva Energy Incorporated) sale_discount_product_id → product.product 413",
+        "064C — quotation header fields the push fills (Payment Scheme, Downpayment, Create Mode, Financed Amount)",
+        "  + created ir.model.fields \"sale.order.x_studio_payment_scheme\" (id 23250)",
+        "  + created ir.model.fields \"sale.order.x_studio_mode\" (id 23254)",
+        "  + created ir.model.fields \"sale.order.x_studio_create_mode\" (id 23256)",
+        "  + created ir.model.fields \"sale.order.x_studio_percentage\" (id 23258)",
+        "  + created ir.model.fields \"sale.order.x_studio_down_amount\" (id 23260)",
+        "  + created ir.model.fields \"sale.order.x_studio_tenor\" (id 23262)",
+        "  + created ir.model.fields \"sale.order.x_studio_financed_amount\" (id 23264)",
+        "  + ir.default sale.order.x_studio_create_mode = \"manual\" (id 107)",
+        "  + ir.default sale.order.x_studio_payment_scheme = \"direct\" (id 108)",
+        "  + ir.default sale.order.x_studio_mode = \"straight\" (id 109)",
+        "  + ir.default sale.order.x_studio_tenor = 0 (id 110)",
+        "  + created ir.ui.view \"Internal Calculator: sale.order payment scheme fields\" (id 5257)",
+        "064I — Bill of Quantities table",
+        "  + created ir.model \"x_boq_line\" (id 1367)",
+        "  = ir.model.fields \"x_boq_line.x_name\" exists (id 23266)",
+        "  + created ir.model.fields \"x_boq_line.x_sale_order_id\" (id 23274)",
+        "  + created ir.model.fields \"x_boq_line.x_sequence\" (id 23276)",
+        "  + created ir.model.fields \"x_boq_line.x_package\" (id 23278)",
+        "  + created ir.model.fields \"x_boq_line.x_product\" (id 23280)",
+        "  + created ir.model.fields \"x_boq_line.x_quantity\" (id 23282)",
+        "  + created ir.model.fields \"x_boq_line.x_unit\" (id 23284)",
+        "  + created ir.model.access \"x_boq_line_user\" (id 1818)",
+        "  + created ir.model.fields \"sale.order.x_boq_line_ids\" (id 23286)",
+        "  + created ir.ui.view \"Internal Calculator: sale.order Bill of Quantities page\" (id 5258)",
+        "064E — calculator figures + bill-schedule automation",
+        "  + created ir.model.fields \"sale.order.x_calc_proposal_ref\" (id 23288)",
+        "  + created ir.model.fields \"sale.order.x_calc_generated_at\" (id 23290)",
+        "  + created ir.model.fields \"sale.order.x_calc_financing_type\" (id 23292)",
+        "  + created ir.model.fields \"sale.order.x_calc_net_price\" (id 23294)",
+        "  + created ir.model.fields \"sale.order.x_calc_discount_amount\" (id 23296)",
+        "  + created ir.model.fields \"sale.order.x_calc_promo_code\" (id 23298)",
+        "  + created ir.model.fields \"sale.order.x_calc_downpayment_pct\" (id 23300)",
+        "  + created ir.model.fields \"sale.order.x_calc_downpayment_amount\" (id 23302)",
+        "  + created ir.model.fields \"sale.order.x_calc_tenor_months\" (id 23304)",
+        "  + created ir.model.fields \"sale.order.x_calc_interest_rate_pa\" (id 23306)",
+        "  + created ir.model.fields \"sale.order.x_calc_monthly_amortization\" (id 23308)",
+        "  + created ir.model.fields \"sale.order.x_calc_total_amount_due\" (id 23310)",
+        "  + created ir.model.fields \"sale.order.x_calc_dst\" (id 23312)",
+        "  + created ir.model.fields \"sale.order.x_calc_total_amount_due_incl_dst\" (id 23314)",
+        "  + created ir.model.fields \"sale.order.x_calc_system_kwp\" (id 23316)",
+        "  + created ir.model.fields \"sale.order.x_calc_panel_count\" (id 23318)",
+        "  + created ir.model.fields \"sale.order.x_calc_battery_kwh\" (id 23320)",
+        "  + created ir.model.fields \"sale.order.x_calc_inverters\" (id 23322)",
+        "  + created ir.model.fields \"sale.order.x_calc_agent_email\" (id 23324)",
+        "  + created ir.ui.view \"Internal Calculator: sale.order calculator figures page\" (id 5259)",
+        "  ~ replaced the code of server action 1528 (previous code saved in the manifest)"
+      ]
+    }
+  ]
+}
