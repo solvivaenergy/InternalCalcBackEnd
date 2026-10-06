@@ -112,6 +112,8 @@ The frontend needs no new variables: it reuses `VITE_API_BASE_URL`.
 
 ## Production deployment plan
 
+> **Executed on 2026-10-06.** Odoo step 1 (064G, 064D, 064C, 064I, 064E) at ~11:40 UTC, backend PR #6 (merge 9e874cd, live on Render 11:55 UTC) and frontend PR #13 (merge b9fd3ec, v3-224 live on Cloudflare 11:55 UTC) approved and merged by roaldaldenreyes, `minSystemKwp` 2.5 → 5 at 11:57 UTC (audited as deploy-dinuguan-20261006@solvivaenergy.com, temp admin deleted), Odoo step 5 (064B, 064L) right after, `verify-dinuguan.mjs --lead-id 52210` all green. Smoke through the deployed backend on opportunity 52210: **S00063** (Direct, ₱661,699, PDF attached), **S00064** (RTO 60 months, ₱703,700.80 with *D. Interest*), **S00065** (promo, ₱651,699 with three *Discount* lines) — salesperson = the lead's rep, Create Mode Automatic, Payment Scheme / Downpayment / Tenor / Financed Amount filled. Kept on purpose. Production record: `scripts/odoo/manifests/solvivaenergy-solviva-odoo-v18-main-30096417.json`.
+
 Order matters: Odoo records and configuration first, then the backend, then the frontend, then the opportunity button together with 064L (user decision 2026-10-06: the New Quotation button is hidden on production in the same release). Backend before frontend because v3-224 posts to a route the old backend does not have.
 
 0. **Pre-flight** — on staging, one quotation from lead 99889 to confirm the v3-224 salesperson rule (`salespersonSource` = `lead`); the 2026-10-06 script/doc changes committed to `staging`; optionally give Patrick Avedillo's production Odoo contact his mobile (0917 148 6078) so the smoke test fills the agent phone (his contact holds only "+63" today).
