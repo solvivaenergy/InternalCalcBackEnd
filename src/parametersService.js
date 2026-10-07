@@ -824,6 +824,22 @@ export async function putParameters(
           },
         };
       }
+      // v3-221 — publicDisabled is optional and ABSENT reads as enabled
+      // (every pre-v3-221 code keeps its behaviour). A present value must be
+      // a real boolean: a string "false" would read as ENABLED by the
+      // frontend gate's strict `=== true` test only by accident, so refuse
+      // it here — this service, not the Netlify function, is the boundary.
+      if (
+        p?.publicDisabled !== undefined &&
+        typeof p.publicDisabled !== "boolean"
+      ) {
+        return {
+          status: 400,
+          payload: {
+            error: `Refusing to save: promo code "${c}" has a non-boolean publicDisabled value.`,
+          },
+        };
+      }
       seen.add(c);
     }
   }
