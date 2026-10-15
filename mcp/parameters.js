@@ -88,6 +88,7 @@ export function parametersView(rt, section, storedPayload) {
       formula: PRICE_FORMULA,
       vatRate: VAT_RATE,
       merchantDiscountRate: ap.merchantDiscountRate,
+      salesCommissionRate: ap.salesCommissionRate,
       grossMarginReference: ap.grossMarginReference,
       singlePhaseCurve: pick(ap, ["grossMarginMinKwp", "grossMarginMidKwp", "grossMarginMaxKwp", "grossMarginMin", "grossMarginMid", "grossMarginMax"]),
       threePhaseCurve: pick(ap, ["grossMarginMinKwpTp", "grossMarginMidKwpTp", "grossMarginMaxKwpTp", "grossMarginMinTp", "grossMarginMidTp", "grossMarginMaxTp"]),
@@ -203,6 +204,7 @@ export function marginSchedule(rt, { kwpPoints, batteryKwhPoints, exampleCogs = 
   const kwps = kwpPoints?.length ? kwpPoints : [1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40];
   const kwhs = batteryKwhPoints?.length ? batteryKwhPoints : [0, 5, 10, 15, 16, 20, 25, 30, 32, 48];
   const mdr = ap.merchantDiscountRate ?? 0;
+  const comm = ap.salesCommissionRate ?? 0;
   const priceAt = (m) => calculations.directFromCogs(exampleCogs, ap, m);
 
   const curve = (phase) =>
@@ -234,19 +236,20 @@ export function marginSchedule(rt, { kwpPoints, batteryKwhPoints, exampleCogs = 
   const example = (() => {
     const m = calculations.grossMarginCurve(6.3, ap, "single");
     const price = priceAt(m);
-    const d = calculations.decomposeDirectPrice(price, exampleCogs, mdr);
+    const d = calculations.decomposeDirectPrice(price, exampleCogs, mdr, comm);
     return {
       cogs: exampleCogs,
       marginUsed: round4(m),
       note: "single-phase panels line on a 6.3 kWp full system (10 × 630 W)",
       directPrice: price,
-      decomposition: { cogs: d.cogs, grossMargin: d.gm, realizedMarginPct: round4(d.gm / (d.gm + d.cogs)), mdrAllowance: d.mdrAmt, vat: d.vat },
+      decomposition: { cogs: d.cogs, grossMargin: d.gm, realizedMarginPct: round4(d.gm / (d.gm + d.cogs)), commissionAllowance: d.commAmt, mdrAllowance: d.mdrAmt, vat: d.vat },
     };
   })();
 
   return {
     formula: PRICE_FORMULA,
     merchantDiscountRate: mdr,
+    salesCommissionRate: comm,
     vatRate: VAT_RATE,
     grossMarginReference: ap.grossMarginReference,
     panelsCurve: { singlePhase: curve("single"), threePhase: curve("three"), anchors: parametersView(rt, "margins").singlePhaseCurve },

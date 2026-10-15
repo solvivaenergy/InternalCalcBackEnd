@@ -73,8 +73,9 @@ export const COMPONENT_LABELS = {
 };
 
 export const PRICE_FORMULA =
-  "directPrice = CEILING( COGS × 1.12 ÷ (1 − margin) ÷ (1.12 × (1 − MDR) − 0.12) ). " +
-  "Prices are VAT-inclusive. Net revenue kept per ₱1 of ex-VAT price = 1.12 × (1 − MDR) − 0.12. " +
+  "directPrice = CEILING( COGS × 1.12 ÷ (1 − margin) ÷ (1.12 × (1 − MDR) − commission − 0.12) ). " +
+  "Prices are VAT-inclusive. Net revenue kept per ₱1 of ex-VAT price = 1.12 × (1 − MDR) − commission − 0.12; " +
+  "the MDR is taken from the VAT-inclusive price, the sales commission from the VAT-exclusive price. " +
   "Two production-parity exceptions: Mounting Support = max(floor price, 13% of the panels' selling price) " +
   "and the cabling bundle = tier % × the panels' selling price, so both realise the panels' margin rather than P / B / C.";
 
@@ -271,20 +272,22 @@ function inverterList(arr) {
   return (arr || []).filter(Boolean).map((i) => ({ ratedKw: i.ratedKw }));
 }
 
-function decomposeLines(items, mdr) {
-  // The Summary tab's price reveal: COGS + GM + MDR allowance + VAT = direct
-  // price on every line (the rounding residual sits in GM), realised margin
-  // = GM ÷ (GM + COGS). Lines with no COGS basis book all net revenue as GM.
-  const rows = items.map((it) => ({ it, d: calculations.decomposeDirectPrice(it.directPrice, it.cogs, mdr) }));
+function decomposeLines(items, mdr, comm) {
+  // The Summary tab's price reveal: COGS + GM + commission allowance + MDR
+  // allowance + VAT = direct price on every line (the rounding residual sits
+  // in GM), realised margin = GM ÷ (GM + COGS). Lines with no COGS basis book
+  // all net revenue as GM.
+  const rows = items.map((it) => ({ it, d: calculations.decomposeDirectPrice(it.directPrice, it.cogs, mdr, comm) }));
   const total = rows.reduce(
     (a, { d }) => ({
       cogs: a.cogs + (d.cogsKnown ? d.cogs : 0),
       gm: a.gm + d.gm,
+      commAmt: a.commAmt + (d.commAmt || 0),
       mdrAmt: a.mdrAmt + d.mdrAmt,
       vat: a.vat + d.vat,
       dp: a.dp + d.dp,
     }),
-    { cogs: 0, gm: 0, mdrAmt: 0, vat: 0, dp: 0 },
+    { cogs: 0, gm: 0, commAmt: 0, mdrAmt: 0, vat: 0, dp: 0 },
   );
   const netRevenue = total.gm + total.cogs;
   return {
@@ -294,6 +297,7 @@ function decomposeLines(items, mdr) {
       cogs: total.cogs,
       grossMargin: total.gm,
       realizedMarginPct: netRevenue > 0 ? round4(total.gm / netRevenue) : null,
+      commissionAllowance: total.commAmt,
       mdrAllowance: total.mdrAmt,
       vat: total.vat,
     },
@@ -307,6 +311,7 @@ export function projectQuote({ state, model, generatedDate, warnings = [], inclu
   const validityDays = ap.quoteValidityDays ?? 30;
   const validUntil = addDays(generatedDate, validityDays);
   const mdr = ap.merchantDiscountRate ?? 0;
+  const comm = ap.salesCommissionRate ?? 0;
   const orderHasInverter = (model.effectiveInverters || []).some(Boolean);
   const fullSystem = model.panelCount > 0 && orderHasInverter;
   const marginFor = calculations.buildMarginResolver(
@@ -326,7 +331,7 @@ export function projectQuote({ state, model, generatedDate, warnings = [], inclu
 
   // Lines ─ the Summary's visible rows (price ≠ 0 and a description).
   const items = (model.pkg?.items || []).filter((i) => i && String(i.description || "").trim() && i.directPrice !== 0);
-  const { rows, total } = decomposeLines(items, mdr);
+  const { rows, total } = decomposeLines(items, mdr, comm);
   const lines = rows.map(({ it, d }) => ({
     key: it.key,
     package: LETTER_BY_CATEGORY[it.category] || "C",
@@ -336,6 +341,7 @@ export function projectQuote({ state, model, generatedDate, warnings = [], inclu
     cogs: d.cogsKnown ? round2(it.cogs) : null,
     grossMargin: d.gm,
     realizedMarginPct: d.cogsKnown && d.gm + d.cogs ? round4(d.gm / (d.gm + d.cogs)) : null,
+    commissionAllowance: d.commAmt,
     mdrAllowance: d.mdrAmt,
     vat: d.vat,
     ...(it.meters != null ? { meters: it.meters } : {}),
@@ -345,7 +351,7 @@ export function projectQuote({ state, model, generatedDate, warnings = [], inclu
   for (const cat of PACKAGE_CATEGORIES) {
     const sub = rows.filter(({ it }) => (LETTER_BY_CATEGORY[it.category] || "C") === cat.letter);
     if (!sub.length) continue;
-    const agg = decomposeLines(sub.map(({ it }) => it), mdr).total;
+    const agg = decomposeLines(sub.map(({ it }) => it), mdr, comm).total;
     byPackage[cat.letter] = { label: cat.label, lines: sub.length, ...agg };
   }
   const zeroPriceInclusions = (model.pkg?.items || [])
@@ -461,6 +467,7 @@ export function projectQuote({ state, model, generatedDate, warnings = [], inclu
       batteryMargin: round4(marginFor("K")),
       referenceMargin: ap.grossMarginReference,
       merchantDiscountRate: mdr,
+      salesCommissionRate: comm,
       vatRate: VAT_RATE,
       components: Object.fromEntries(
         Object.keys(COMPONENT_LABELS).map((id) => [id, { margin: round4(marginFor(id)), label: COMPONENT_LABELS[id] }]),

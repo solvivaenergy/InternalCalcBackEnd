@@ -203,6 +203,7 @@ export function registerTools(server) {
                 storedOverrideKeys: Object.keys(payload.adminParams || {}).length,
                 grossMarginReference: rt.adminParams.grossMarginReference,
                 merchantDiscountRate: rt.adminParams.merchantDiscountRate,
+                salesCommissionRate: rt.adminParams.salesCommissionRate,
                 invertersInStock: { singlePhase: rt.invertersSinglePhase.filter((i) => i.available !== false).length, threePhase: rt.invertersThreePhase.filter((i) => i.available !== false).length },
                 batteryPackages: (rt.adminParams.batteryPackages || []).length,
                 promoCodes: (rt.adminParams.promoCodes || []).map((p) => p.code),

@@ -265,10 +265,10 @@ export const ADMIN_PARAMS = {
   // ─── Interest rates ────────────────────────────────────────────────────────
   // Admin C22, C23, C24, C27, C28, C25
   // ─── MARGINS (v3-83) ──────────────────────────────────────────────────────
-  // The two Product levers that turn Engineering's COGS into every direct
+  // The Product levers that turn Engineering's COGS into every direct
   // purchase price in the app. See directFromCogs() in calculations.js.
-  //   DP = CEILING( COGS × 1.12 / (1 − grossMargin) / (1.12 × (1 − MDR) − 0.12) )
-  // Changing either moves EVERY price at once.
+  //   DP = CEILING( COGS × 1.12 / (1 − grossMargin) / (1.12 × (1 − MDR) − commission − 0.12) )
+  // Changing any of them moves EVERY price at once.
   // ─── FINANCING ENTITY (v3-87) ────────────────────────────────────────────
   // WHO extends the credit. Named in the customer-facing T&Cs and on the PDF's
   // payment-disclosure page.
@@ -374,6 +374,14 @@ export const ADMIN_PARAMS = {
   // why the denominator is 0.832, not 0.85. Anjon's original sheet used 0.85 and
   // quietly realised 24.4% against a 26% target; this form realises 26%.
   merchantDiscountRate: 0.15,
+  // v3-226 (testing v3-210) — sales commission allowance (user-directed, Pat;
+  // D1–D3). Charged on the VAT-EXCLUSIVE direct purchase price (unlike the
+  // MDR's VAT-inclusive base), universal across every COGS-derived price
+  // exactly like the MDR. SEEDED LIVE AT 2% by decision D1 — a stored blob
+  // missing the key takes this on deploy, dropping retention 0.832 → 0.812 and
+  // lifting every DP ~+2.46% at the 15% MDR. INTENTIONAL price movement, not
+  // drift.
+  salesCommissionRate: 0.02,
 
   // ─── RTO INTEREST RATE SURFACE (v3-79) ────────────────────────────────────
   // REPLACES the v3-78 flat `baseRtoInterestRate` + small-package risk premium.
