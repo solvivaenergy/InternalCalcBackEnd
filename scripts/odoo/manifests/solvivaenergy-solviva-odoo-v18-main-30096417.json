@@ -489,6 +489,38 @@
       "step": "064E",
       "created": true,
       "at": "2026-10-06T11:50:18.513Z"
+    },
+    {
+      "model": "ir.config_parameter",
+      "id": 112,
+      "key": "internal_calculator.base_url",
+      "step": "064B",
+      "created": true,
+      "at": "2026-10-06T11:57:25.630Z"
+    },
+    {
+      "model": "ir.actions.server",
+      "id": 1725,
+      "key": "Internal Calculator: Generate Proposal",
+      "step": "064B",
+      "created": true,
+      "at": "2026-10-06T11:57:26.145Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5260,
+      "key": "Internal Calculator: crm.lead Generate Proposal button",
+      "step": "064B",
+      "created": true,
+      "at": "2026-10-06T11:57:26.729Z"
+    },
+    {
+      "model": "ir.ui.view",
+      "id": 5261,
+      "key": "Internal Calculator: crm.lead hide New Quotation",
+      "step": "064L",
+      "created": true,
+      "at": "2026-10-06T11:57:26.876Z"
     }
   ],
   "modified": [
@@ -548,6 +580,14 @@
     },
     "064E": {
       "lastRun": "2026-10-06T11:50:18.644Z",
+      "applied": true
+    },
+    "064B": {
+      "lastRun": "2026-10-06T11:57:26.730Z",
+      "applied": true
+    },
+    "064L": {
+      "lastRun": "2026-10-06T11:57:26.876Z",
       "applied": true
     }
   },
@@ -634,6 +674,23 @@
         "  + created ir.model.fields \"sale.order.x_calc_agent_email\" (id 23324)",
         "  + created ir.ui.view \"Internal Calculator: sale.order calculator figures page\" (id 5259)",
         "  ~ replaced the code of server action 1528 (previous code saved in the manifest)"
+      ]
+    },
+    {
+      "at": "2026-10-06T11:57:25.494Z",
+      "steps": [
+        "064B",
+        "064L"
+      ],
+      "apply": true,
+      "calculatorUrl": "https://internalcalc.solvivaenergy.com",
+      "actions": [
+        "064B — Generate Proposal button",
+        "  + created ir.config_parameter \"internal_calculator.base_url\" (id 112)",
+        "  + created ir.actions.server \"Internal Calculator: Generate Proposal\" (id 1725)",
+        "  + created ir.ui.view \"Internal Calculator: crm.lead Generate Proposal button\" (id 5260)",
+        "064L — hide New Quotation on the opportunity",
+        "  + created ir.ui.view \"Internal Calculator: crm.lead hide New Quotation\" (id 5261)"
       ]
     }
   ]

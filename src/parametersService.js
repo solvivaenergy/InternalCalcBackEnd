@@ -117,6 +117,8 @@ const PARAM_KEY_TO_SECTION = {
   // v3-190 — moved to FinCo (UI label renamed; key kept for stored payloads).
   grossMarginReference: "returnsAssumptions",
   merchantDiscountRate: "margins",
+  // v3-226 — sales commission allowance; grosses up every COGS-derived price.
+  salesCommissionRate: "margins",
   // Interest Rates
   rateAnchorMax: "interestRates",
   rateAnchorMid: "interestRates",
@@ -1068,6 +1070,35 @@ export async function putParameters(
         status: 400,
         payload: {
           error: `Refusing to save: merchantDiscountRate must be between 0 and ${mdrCeiling} (exclusive upper bound).`,
+        },
+      };
+    }
+  }
+
+  // v3-226 — the sales commission allowance: a fraction in [0, 1) alone, and
+  // jointly with the (merged) MDR the retention 1.12 × (1 − MDR) − commission
+  // − 0.12 must stay positive, or directFromCogs() zeroes every price.
+  if ("salesCommissionRate" in ap) {
+    const cr = ap.salesCommissionRate;
+    if (typeof cr !== "number" || !Number.isFinite(cr) || cr < 0 || cr >= 1) {
+      return {
+        status: 400,
+        payload: {
+          error:
+            "Refusing to save: salesCommissionRate must be a fraction between 0 and 1 (exclusive of 1).",
+        },
+      };
+    }
+  }
+  {
+    const mdr = Number(ap.merchantDiscountRate) || 0;
+    const cr = Number(ap.salesCommissionRate) || 0;
+    if (!(1.12 * (1 - mdr) - cr - 0.12 > 0)) {
+      return {
+        status: 400,
+        payload: {
+          error:
+            "Refusing to save: the MDR allowance, the sales commission allowance and the VAT remittance together take the entire sale or more — 1.12 × (1 − merchantDiscountRate) − salesCommissionRate − 0.12 must stay above zero.",
         },
       };
     }
