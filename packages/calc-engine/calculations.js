@@ -112,7 +112,7 @@ export function NPV(rate, cashflows) {
 // Engineering (Anjon) now enters COGS (pre-VAT). Every direct purchase price in
 // the app is DERIVED from it. Product owns the two levers.
 //
-//     DP Price = CEILING( COGS × (1+VAT) / (1 − GM) / ((1+VAT)(1 − MDR) − VAT) )
+//     DP Price = CEILING( COGS × (1+VAT) / (1 − GM) / ((1+VAT)(1 − MDR) − Commission − VAT) )
 //
 // WHY PRE-VAT COGS IS THE RIGHT BASE: under Philippine VAT, input VAT paid to
 // suppliers is CREDITABLE against output VAT collected on sales — it is
@@ -126,6 +126,16 @@ export function NPV(rate, cashflows) {
 // not 0.85. Anjon's original sheet divided by 0.85, which quietly realised a
 // 24.4% margin against a 26% target. This form realises the margin you set.
 // (Not tax advice — confirmed with the user, who chose this over the sheet's.)
+//
+// v3-226 (engine 1.2.0; ported from the testing branch's v3-210) — the SALES
+// COMMISSION allowance joins the denominator (user-directed, Pat; decisions
+// D1/D2). Unlike the MDR it is charged on the VAT-EXCLUSIVE price, so it
+// enters WITHOUT the (1+VAT) factor:
+//     retained R = (1+VAT)(1 − MDR) − Commission − VAT
+//                = 1.12 × 0.85 − 0.02 − 0.12 = 0.812 at the seeds.
+// Verified cell-for-cell against Pat's COGS-to-DP_DP-to-GM_calculator.xlsx:
+// COGS 100,000 @ GM 10% / MDR 15% / commission 2% → DP ₱153,256.70 (D9);
+// commission leg = c × DP/(1+VAT) (D15); MDR leg = m × DP (D14).
 const VAT_RATE = 0.12; // Philippine VAT. A constant, not a param, by instruction.
 
 // v3-145 — sign-aware companion to directFromCogs, for the ONE place negative
@@ -158,13 +168,20 @@ export function directFromCogs(cogs, adminParams, marginOverride) {
     ap.grossMargin ??
     0;
   const mdr = ap.merchantDiscountRate ?? 0;
+  // v3-226 — sales commission allowance (user-directed, Pat; D1/D2). Charged
+  // on the VAT-EXCLUSIVE direct purchase price — unlike the MDR, which the
+  // acquirer takes from the VAT-INCLUSIVE amount — so it enters the retention
+  // WITHOUT the (1+VAT) factor. Verified against Pat's
+  // COGS-to-DP_DP-to-GM_calculator.xlsx (D6/D9 and the D15 reverse leg).
+  const comm = ap.salesCommissionRate ?? 0;
   const c = Number(cogs);
   if (!Number.isFinite(c) || c <= 0) return 0;
-  // Net retained per 1.00 of ex-VAT price, after the acquirer's cut and the VAT
-  // remittance. Guarded: the server and client both refuse to save margins that
-  // would drive this to zero or below, but a hand-edited blob must not divide by
-  // zero and blank out every price in the app.
-  const retained = (1 + VAT_RATE) * (1 - mdr) - VAT_RATE;
+  // Net retained per 1.00 of ex-VAT price, after the acquirer's cut, the sales
+  // commission, and the VAT remittance. Guarded: the server and client both
+  // refuse to save allowances that would drive this to zero or below, but a
+  // hand-edited blob must not divide by zero and blank out every price in the
+  // app.
+  const retained = (1 + VAT_RATE) * (1 - mdr) - comm - VAT_RATE;
   if (!(retained > 0) || !(1 - gm > 0)) return 0;
   return Math.ceil((c * (1 + VAT_RATE)) / (1 - gm) / retained);
 }
@@ -221,9 +238,10 @@ export function cogsFromDirect(directPrice, adminParams, marginOverride) {
     ap.grossMargin ??
     0;
   const mdr = ap.merchantDiscountRate ?? 0;
+  const comm = ap.salesCommissionRate ?? 0; // v3-226 — mirrors directFromCogs
   const px = Number(directPrice);
   if (!Number.isFinite(px) || px <= 0) return 0;
-  const retained = (1 + VAT_RATE) * (1 - mdr) - VAT_RATE;
+  const retained = (1 + VAT_RATE) * (1 - mdr) - comm - VAT_RATE;
   if (!(retained > 0) || !(1 - gm > 0)) return 0;
   return Math.round((px * (1 - gm) * retained) / (1 + VAT_RATE));
 }
@@ -2261,15 +2279,35 @@ export function computePaymentTerms(state, adminParams, packageData) {
 // columns also sum exactly. cogs == null (misc lines, rep-entered prices with
 // no COGS basis) books the entire net revenue as margin — flagged by
 // `cogsKnown: false` so the UI can dash the COGS cell.
-export function decomposeDirectPrice(directPrice, cogs, merchantDiscountRate) {
+// v3-226 — a fourth leg, the sales commission (D2): charged on the
+// VAT-EXCLUSIVE price (dp ÷ 1.12 × rate — Pat's workbook cell D15), while the
+// MDR leg stays on the VAT-INCLUSIVE dp. GM remains the residual so the
+// columns still sum EXACTLY to the DP on every line. Default 0 keeps every
+// pre-v3-226 caller's decomposition byte-identical.
+export function decomposeDirectPrice(
+  directPrice,
+  cogs,
+  merchantDiscountRate,
+  salesCommissionRate = 0,
+) {
   const dp = Number(directPrice) || 0;
   const m = Number(merchantDiscountRate) || 0;
+  const cr = Number(salesCommissionRate) || 0;
   const vat = Math.round((dp * VAT_RATE) / (1 + VAT_RATE));
   const mdrAmt = Math.round(dp * m);
+  const commAmt = Math.round((dp / (1 + VAT_RATE)) * cr);
   const cogsR = Math.round(cogs ?? 0);
   const dpR = Math.round(dp);
-  const gm = dpR - cogsR - mdrAmt - vat; // residual → exact identity
-  return { cogs: cogsR, gm, mdrAmt, vat, dp: dpR, cogsKnown: cogs != null };
+  const gm = dpR - cogsR - mdrAmt - commAmt - vat; // residual → exact identity
+  return {
+    cogs: cogsR,
+    gm,
+    mdrAmt,
+    commAmt,
+    vat,
+    dp: dpR,
+    cogsKnown: cogs != null,
+  };
 }
 
 export function monthlyAddOnRate(monthlyPmt, amountForFinancing, tenor) {

@@ -1,5 +1,72 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-10-15 — `mcp/`: the "Internal Calculator Engine" MCP server for Claude Teams
+
+### Scope
+
+- New folder `mcp/` — a read-only MCP server (Node, `@modelcontextprotocol/sdk`)
+  that runs `@solviva/calc-engine` on the live `app_parameters` row of the
+  production, staging or testing database and offers eight tools:
+  `calc_environments`, `calc_parameters` (16 sections), `calc_margin_schedule`,
+  `calc_rate_table`, `calc_quote` (the internal view: every line with COGS,
+  gross margin ₱ and realised %, MDR allowance, VAT and the margin rule that
+  priced it — the Summary tab's price reveal), `calc_compare` (2–6 scenarios),
+  `calc_proposal` (everything the proposal PDF prints, customer-facing, plus
+  the exact `/api/odoo/quotation` body for reference) and
+  `calc_parameter_history` (`parameter_audit_events`). Full description in
+  `mcp/README.md`.
+- Same shape and gate as the monitoring repo's `db_mcp.py`: stdio for Claude
+  Code (`npm run mcp`), streamable HTTP for the claude.ai connector
+  (`npm run mcp:http`; shared bearer token `CALC_MCP_SERVICE_TOKEN`, Anthropic
+  egress allowlist, `MCP_PUBLIC_HOST` Host guard). Stateless: one server per
+  request.
+- Reads as the SELECT-only role `db_mcp_ro` (migration 20261014) through the
+  three `DB_MCP_CALC*_URL` strings the "Solviva Databases" connector already
+  holds — no new credential, no service-role key in this process. Only
+  `app_parameters` (30 s cache, like `estimateService`) and
+  `parameter_audit_events` are read, inside `READ ONLY` transactions.
+- `mcp/supabase-root-2021-ca.pem`: Supabase signs the pooler chain with its own
+  root, which Node does not trust; pinned and verified on every connection
+  (fingerprint in the README).
+- The engine's live-object pattern is respected: `withRuntime()` fills the
+  objects and computes synchronously, so requests cannot interleave.
+
+### Files touched
+
+- `mcp/**` (new), `package.json` (deps `@modelcontextprotocol/sdk`, `pg`,
+  `zod`; scripts `mcp`, `mcp:http`), `package-lock.json`, `README.md`.
+
+### Contract changes
+
+- None to the API. New process, new entry point.
+
+### Data changes
+
+- None.
+
+### Validation
+
+- `node --check` on every file in `mcp/`.
+- Against staging and production (read-only): parameters read in ~0.4 s,
+  `calc_quote` in ~30 ms; line decomposition sums to the direct price on every
+  line; `calc_proposal` output contains no `cogs`/`margin` field and no
+  unfilled `{{…}}` token; invalid inverter / package / appliance / location
+  inputs answer with a message listing the valid values; unknown
+  `environment` is refused by schema validation.
+- HTTP: `/healthz` 200 without a token; `POST /mcp` without or with a wrong
+  token 401; `GET /mcp` 405; the SDK client lists the eight tools and calls
+  every one successfully.
+
+### Deployment notes
+
+- Render service `internalcalc-mcp` (dashboard, this repo has no Blueprint):
+  branch `main`, Node, `npm ci`, `npm run mcp:http`, Starter plan, health
+  `/healthz`, env `NODE_VERSION=22`, `CALC_MCP_SERVICE_TOKEN`,
+  `MCP_PUBLIC_HOST`, the three `DB_MCP_CALC*_URL`. Then a custom connector
+  in claude.ai Organizational settings → Connectors. Steps in `mcp/README.md`.
+- The server never writes: a proposal is still printed and pushed to Odoo
+  from the calculator.
+
 ## 2026-10-06 — apply-dinuguan: production prerequisites as steps (064D, 064C); products copy staging
 
 ### Scope
