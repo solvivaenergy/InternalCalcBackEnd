@@ -9,7 +9,7 @@ Odoo instance facts that shaped the design (verified 2026-09-25 over JSON-RPC):
 - Python-code server actions and inbound webhooks are enabled and already in use.
 - The "New Quotation" button lives on the **CRM Opportunity** form (`sale_crm.crm_case_form_view_oppor`), not on the quotation.
 - The "bill generation schedule" is Odoo Subscriptions: the on-change automation *Sales Order Payment Terms Auto* (id 141) sets the Monthly plan and an end date from the payment-term name; the monthly invoice amount is the recurring order line's unit price.
-- Odoo.sh **neutralises** staging builds, which deletes copied API keys. A key must be generated on the staging build itself.
+- Odoo.sh **neutralises** staging builds, which deletes copied API keys. A key must be generated on the staging build itself. *(Corrected 2026-10-26: on the rebuild `…-40444066` production's keys were copied and work; what dies is any key made on the previous staging build. Neutralisation rewrote every outgoing webhook action to "neutralization - disable webhook".)*
 
 ## Product decisions (refinement, 2026-09-25)
 
@@ -80,26 +80,28 @@ Open for review after staging: the **quantity rules** in `InternalCalcFrontEnd/s
 
 | Where | Setting | Staging | Production |
 |---|---|---|---|
-| Render backend | `ODOO_URL` | `https://solvivaenergy-sh-new-erp-staging-37792153.dev.odoo.com` | `https://solvivaenergy-sh.odoo.com` |
-| Render backend | `ODOO_DB` | `solvivaenergy-sh-new-erp-staging-37792153` | `solvivaenergy-solviva-odoo-v18-main-30096417` |
-| Render backend | `ODOO_USER` / `ODOO_API_KEY` | admin + a key generated **on the staging build** | already set (043D) |
-| Render backend | `ODOO_QUOTATION_ENABLED` | `true` **only after** the `ODOO_*` variables point at the staging build | `true` at step 2 of the production plan |
+| Render backend | `ODOO_URL` | `https://solviva-erp-staging.odoo.com` (the alias; it follows each odoo.sh rebuild) | `https://solvivaenergy-sh.odoo.com` |
+| Render backend | `ODOO_DB` | `solvivaenergy-sh-new-erp-staging-40444066` since 2026-10-26; changes on every rebuild | `solvivaenergy-solviva-odoo-v18-main-30096417` |
+| Render backend | `ODOO_USER` / `ODOO_API_KEY` | admin + since 2026-10-26 the admin user's **production** key (no staging-only key made yet); `ODOO_URL` and `ODOO_DB` alone keep this service on staging | already set (043D) |
+| Render backend | `ODOO_QUOTATION_ENABLED` | `true` **only after** the `ODOO_*` variables point at the staging build (`true` on Staging and Testing, 2026-10-26) | `true` at step 2 of the production plan |
+
+The Staging and Testing services carry the same four `ODOO_*` values, and so do `.env.staging` and `.env.testing`. After a rebuild, the `odoo-staging-rotate` repo rewrites all of them (and redeploys both services with `--deploy`). That replaces setting them by hand.
 | Odoo | `internal_calculator.base_url` | `https://staging-internalcalc.solvivaenergy.com` | `https://internalcalc.solvivaenergy.com` (confirm the production hostname) |
 
 The frontend needs no new variables: it reuses `VITE_API_BASE_URL`.
 
-> **Why the opt-in flag exists.** On 2026-09-25 the Render staging service was found to carry the **production** Odoo credential (the read-only lead lookup had been sharing it since 043D). An authenticated staging probe therefore created quotation S00062 in production; it was deleted the same minute. The quotation route now refuses to write unless `ODOO_QUOTATION_ENABLED=true`, so re-pointing `ODOO_*` at staging and enabling the flag are two deliberate steps.
+> **Why the opt-in flag exists.** On 2026-09-25 the Render staging service was found to carry the **production** Odoo credential (the read-only lead lookup had been sharing it since 043D). An authenticated staging probe therefore created quotation S00062 in production; it was deleted the same minute. The quotation route now refuses to write unless `ODOO_QUOTATION_ENABLED=true`, so re-pointing `ODOO_*` at staging and enabling the flag are two deliberate steps. Since 2026-10-26 the staging services hold the production **key** again, but with `ODOO_URL`/`ODOO_DB` on the staging build; that pair decides where a quotation lands, so never point it at production on a staging or testing service.
 
 ## Staging run-book
 
-1. Generate an API key for `admin@solvivaenergy.com` on the staging build and put it in `.env.staging` (`ODOO_API_KEY=`) and in the Render staging service. **Replace all four `ODOO_*` variables on Render** (they currently point at production), then set `ODOO_QUOTATION_ENABLED=true` there.
+1. Point everything at the current staging build with `odoo-staging-rotate` (`apply --url https://solviva-erp-staging.odoo.com --deploy`), with a key generated for `admin@solvivaenergy.com` on that build or the admin user's production key. It rewrites `.env.staging`, `.env.testing` and both Render services' `ODOO_*`. Then confirm `ODOO_QUOTATION_ENABLED=true` on the Render staging service. Done 2026-10-26 for `…-40444066`.
 2. Dry run, then apply:
    ```powershell
    node scripts/odoo/apply-dinuguan.mjs --env-file .env.staging --calculator-url https://staging-internalcalc.solvivaenergy.com
    node scripts/odoo/apply-dinuguan.mjs --env-file .env.staging --calculator-url https://staging-internalcalc.solvivaenergy.com --yes
    node scripts/odoo/verify-dinuguan.mjs --env-file .env.staging --lead-id 99889
    ```
-3. Commit `scripts/odoo/manifests/solvivaenergy-sh-new-erp-staging-37792153.json`.
+3. Commit `scripts/odoo/manifests/<staging database>.json`. After a rebuild, `odoo-staging-rotate` creates it as a copy of the production manifest, because the rebuild is a copy of production (`solvivaenergy-sh-new-erp-staging-40444066.json` on 2026-10-26; the `…-37792153` manifest belongs to an older build).
 4. Deploy backend + frontend to staging (push `staging` in both repos; the frontend Action publishes to `staging-internalcalc.solvivaenergy.com`).
 5. Browser checks, on a test opportunity (`[test] patricia test`, id 99889):
    - the opportunity form shows **Generate Proposal** and no **New Quotation**;
