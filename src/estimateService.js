@@ -29,6 +29,7 @@ import {
 } from "@solviva/calc-engine";
 import { availableDeliveryLocations } from "@solviva/calc-engine/data/adminParams.js";
 import { readParametersPayload } from "./parametersService.js";
+import { DEFAULT_REGION } from "./regions.js";
 
 const require = createRequire(import.meta.url);
 export const ENGINE_VERSION = require("@solviva/calc-engine/package.json").version;
@@ -43,7 +44,10 @@ let paramsCache = { at: 0, payload: null };
 async function liveParamsPayload() {
   const now = Date.now();
   if (!paramsCache.payload || now - paramsCache.at > PARAMS_CACHE_MS) {
-    paramsCache = { at: now, payload: await readParametersPayload() };
+    // The website estimate is Luzon-only (v3-231): it offers Luzon locations
+    // and the public site has no region picker, so the cache stays
+    // single-region.
+    paramsCache = { at: now, payload: await readParametersPayload(DEFAULT_REGION) };
   }
   // buildRuntime edits the override in place (legacy-blob migrations), so it
   // gets a copy and the cache stays as the row was read.

@@ -2,14 +2,33 @@ import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  DEFAULT_REGION,
+  REGIONS,
+  regionLabel,
+  regionsFromAppMetadata,
+  regionForbiddenPayload,
+} from "./regions.js";
 
-const TABLE = "app_parameters";
+// v3-231 — one payload PER REGION in public.region_parameters (migration
+// 20261028). The legacy one-row app_parameters is Luzon's row until the
+// cut-over: the frontend's direct-read fallback and the mcp/ connector still
+// read it, so every Luzon save is MIRRORED into it (writeRegionPayload), and
+// while the new table does not exist yet (backend deployed before the
+// migration) Luzon is read from and written to the legacy row directly.
+const LEGACY_TABLE = "app_parameters";
+const REGION_TABLE = "region_parameters";
 const LOCAL_JSON_STORAGE = "local-json";
-const LOCAL_JSON_PATH = path.join(
-  process.cwd(),
-  "data",
-  "parameters.local.json",
-);
+// Luzon keeps the historical file name (tracked in git, used by dev-server);
+// every other region gets its own file beside it.
+const localJsonPath = (region) =>
+  path.join(
+    process.cwd(),
+    "data",
+    region === DEFAULT_REGION
+      ? "parameters.local.json"
+      : `parameters.${region}.local.json`,
+  );
 const LOCAL_AUDIT_PATH = path.join(
   process.cwd(),
   "data",
@@ -192,6 +211,15 @@ const PARAM_KEY_TO_SECTION = {
   // Location (v3-199) — the Luzon free-delivery radius became a parameter;
   // it was a hardcoded 30 km before.
   luzonFreeTravelKm: "location",
+  // v3-231 — region-aware delivery (engine 1.3.0): the region's name on the
+  // delivery line / picker / proposal, its dispatch hub, and whether that hub
+  // exists yet (false ⇒ ₱0 delivery at any km). odooCompanyId is the Odoo
+  // company/branch a region's leads live in (null until Finance registers
+  // the Cebu branch) — the lead↔region guard compares against it.
+  deliveryRegionLabel: "location",
+  deliveryHubLabel: "location",
+  deliveryHubEnabled: "location",
+  odooCompanyId: "location",
   // Margins (v3-191) — per-component margin table plus the three-phase curve
   // anchors and the no-inverter (expansion / RSD-only / battery-only) margins.
   componentMargins: "margins",
@@ -235,6 +263,10 @@ export async function resolveEditRole(supabase, accessToken) {
     return { status: 401, error: "Invalid or expired session token" };
   }
   const userId = userData.user.id;
+  // v3-231 — the regions this account may use (auth.getUser reads GoTrue's
+  // stored user, not the JWT claims, so a change made in User Management is
+  // enforced here immediately). Missing ⇒ ['luzon'] (src/regions.js).
+  const regions = regionsFromAppMetadata(userData.user.app_metadata);
 
   try {
     const { data: roleRow, error: roleError } = await supabase
@@ -250,6 +282,7 @@ export async function resolveEditRole(supabase, accessToken) {
         return {
           role: "edit",
           userId,
+          regions,
           fallback: true,
         };
       }
@@ -266,15 +299,29 @@ export async function resolveEditRole(supabase, accessToken) {
         error: "Your account does not have permission to edit parameters.",
       };
     }
-    return { role: editRole, userId, email: userData.user.email || null };
+    return {
+      role: editRole,
+      userId,
+      email: userData.user.email || null,
+      regions,
+    };
   } catch (error) {
     return {
       role: "edit",
       userId,
       email: userData.user.email || null,
+      regions,
       fallback: true,
     };
   }
+}
+
+// v3-231 — every role, Super Admin included, is confined to the regions on
+// its account. Returns null when allowed, else a { status, payload } result.
+function assertRegionAccess(auth, region) {
+  const regions = Array.isArray(auth?.regions) ? auth.regions : [DEFAULT_REGION];
+  if (regions.includes(region)) return null;
+  return { status: 403, payload: regionForbiddenPayload(region) };
 }
 
 function isLocalJsonStorage() {
@@ -325,55 +372,183 @@ export function getSupabaseClient() {
   });
 }
 
-async function readCurrentPayload(supabase) {
+// A storage condition the caller must answer with a status (503 while the
+// region table is not provisioned, 404 for an unseeded region) rather than a
+// 500 — distinguished from a real query failure, which still throws plainly.
+class RegionStorageError extends Error {
+  constructor(status, payload) {
+    super(payload.error);
+    this.status = status;
+    this.payload = payload;
+  }
+}
+const asStorageResult = (error) =>
+  error instanceof RegionStorageError
+    ? { status: error.status, payload: error.payload }
+    : null;
+
+// PostgREST's wording for a table it does not know (schema cache) — the
+// window between this backend deploying and the migration being applied.
+const isMissingTableError = (error) =>
+  /PGRST205|does not exist|Could not find the table/i.test(
+    `${error?.code || ""} ${error?.message || ""}`,
+  );
+
+const asPayload = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+async function readLegacyPayload(supabase) {
   const { data, error } = await supabase
-    .from(TABLE)
+    .from(LEGACY_TABLE)
     .select("payload")
     .eq("id", true)
     .maybeSingle();
   if (error) {
-    throw new Error(`Supabase query failed for ${TABLE}: ${error.message}`);
+    throw new Error(`Supabase query failed for ${LEGACY_TABLE}: ${error.message}`);
   }
-  return data?.payload && typeof data.payload === "object" ? data.payload : {};
+  return asPayload(data?.payload);
 }
 
-async function readLocalJsonPayload() {
+// → { payload, legacy }. `legacy: true` means the region table is not there
+// yet and Luzon was served from app_parameters; a write must then go back to
+// app_parameters too. Any other region without a table/row is an operator
+// problem (run the migration / the seed script), reported as 503 / 404 and
+// NEVER merged onto {} — a PUT on an empty payload would persist a half row.
+async function readRegionRow(supabase, region) {
+  const { data, error } = await supabase
+    .from(REGION_TABLE)
+    .select("payload")
+    .eq("region", region)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTableError(error)) {
+      if (region === DEFAULT_REGION) {
+        return { payload: await readLegacyPayload(supabase), legacy: true };
+      }
+      throw new RegionStorageError(503, {
+        error: `${regionLabel(region)} parameters are not provisioned on this server yet (apply supabase/migrations/20261028_region_parameters.sql).`,
+        code: "region_not_provisioned",
+      });
+    }
+    throw new Error(`Supabase query failed for ${REGION_TABLE}: ${error.message}`);
+  }
+  if (!data) {
+    if (region === DEFAULT_REGION) {
+      return { payload: await readLegacyPayload(supabase), legacy: true };
+    }
+    throw new RegionStorageError(404, {
+      error: `${regionLabel(region)} parameters have not been seeded on this server yet (scripts/seed-region-parameters.mjs).`,
+      code: "region_not_seeded",
+    });
+  }
+  return { payload: asPayload(data.payload), legacy: false };
+}
+
+async function readLocalJsonPayload(region = DEFAULT_REGION) {
   try {
-    const raw = await fs.readFile(LOCAL_JSON_PATH, "utf8");
-    const payload = JSON.parse(raw);
-    return payload && typeof payload === "object" && !Array.isArray(payload)
-      ? payload
-      : {};
+    const raw = await fs.readFile(localJsonPath(region), "utf8");
+    return asPayload(JSON.parse(raw));
   } catch (error) {
     if (error?.code === "ENOENT") return {};
     throw new Error(`Local parameter file could not be read: ${error.message}`);
   }
 }
 
-async function writePayload(supabase, payload) {
-  const { error } = await supabase.from(TABLE).upsert(
-    {
-      id: true,
-      payload,
-      updated_at: new Date().toISOString(),
-    },
+async function writeLegacyPayload(supabase, payload, updatedAt) {
+  const { error } = await supabase.from(LEGACY_TABLE).upsert(
+    { id: true, payload, updated_at: updatedAt },
     { onConflict: "id" },
   );
   if (error) {
-    throw new Error(`Supabase upsert failed for ${TABLE}: ${error.message}`);
+    throw new Error(`Supabase upsert failed for ${LEGACY_TABLE}: ${error.message}`);
   }
 }
 
-async function writeLocalJsonPayload(payload) {
-  const directory = path.dirname(LOCAL_JSON_PATH);
-  const temporaryPath = `${LOCAL_JSON_PATH}.tmp`;
-  await fs.mkdir(directory, { recursive: true });
+// The one place a region row is written. Luzon is ALSO mirrored into the
+// legacy app_parameters row — best effort, logged, never fails the save — so
+// everything that still reads that row (frontend fallback, mcp/db.js, the
+// parity harness) stays current. Remove the mirror once those read
+// region_parameters.
+async function writeRegionPayload(supabase, region, payload) {
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabase.from(REGION_TABLE).upsert(
+    { region, payload, updated_at: updatedAt },
+    { onConflict: "region" },
+  );
+  if (error) {
+    throw new Error(`Supabase upsert failed for ${REGION_TABLE}: ${error.message}`);
+  }
+  if (region === DEFAULT_REGION) {
+    try {
+      await writeLegacyPayload(supabase, payload, updatedAt);
+    } catch (mirrorError) {
+      console.error("[parameters] luzon mirror into app_parameters failed", {
+        reason: mirrorError.message,
+      });
+    }
+  }
+}
+
+async function writePayload(supabase, region, payload, { legacy = false } = {}) {
+  if (legacy) {
+    // Region table not provisioned yet: Luzon lives in app_parameters alone.
+    await writeLegacyPayload(supabase, payload, new Date().toISOString());
+    return;
+  }
+  await writeRegionPayload(supabase, region, payload);
+}
+
+// v3-231 — maintenance mode is GLOBAL by product decision (one gate for the
+// whole calculator) while every other parameter is per region. A save that
+// changes adminParams.gateAuthEnabled in one region copies the new value into
+// every other seeded region row, so the rows always agree on it and the
+// frontend keeps its single "save the active region" path. Best effort per
+// region; returns the regions that were updated.
+const GLOBAL_ADMIN_KEYS = ["gateAuthEnabled"];
+async function mirrorGlobalKeys(supabase, region, current, merged) {
+  const changed = GLOBAL_ADMIN_KEYS.filter(
+    (key) =>
+      merged.adminParams?.[key] !== undefined &&
+      JSON.stringify(merged.adminParams[key]) !==
+        JSON.stringify(current.adminParams?.[key]),
+  );
+  if (!changed.length) return [];
+  const mirrored = [];
+  for (const other of REGIONS) {
+    if (other === region) continue;
+    try {
+      const { data, error } = await supabase
+        .from(REGION_TABLE)
+        .select("payload")
+        .eq("region", other)
+        .maybeSingle();
+      if (error || !data) continue; // not seeded: nothing to keep in step
+      const payload = asPayload(data.payload);
+      payload.adminParams = { ...(payload.adminParams || {}) };
+      for (const key of changed) payload.adminParams[key] = merged.adminParams[key];
+      await writeRegionPayload(supabase, other, payload);
+      mirrored.push(other);
+    } catch (mirrorError) {
+      console.error("[parameters] global-key mirror failed", {
+        region: other,
+        keys: changed,
+        reason: mirrorError.message,
+      });
+    }
+  }
+  return mirrored;
+}
+
+async function writeLocalJsonPayload(payload, region = DEFAULT_REGION) {
+  const filePath = localJsonPath(region);
+  const temporaryPath = `${filePath}.tmp`;
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(
     temporaryPath,
     `${JSON.stringify(payload, null, 2)}\n`,
     "utf8",
   );
-  await fs.rename(temporaryPath, LOCAL_JSON_PATH);
+  await fs.rename(temporaryPath, filePath);
 }
 
 const INVENTORY_AREAS = new Set(["solarPanel", "cabling", "batteryPackage"]);
@@ -524,13 +699,18 @@ async function writeLocalAuditEvent(event) {
   await fs.appendFile(LOCAL_AUDIT_PATH, `${JSON.stringify(event)}\n`, "utf8");
 }
 
-async function readLocalAuditEvents(limit) {
+// One local audit file for every region; each line carries its `region`
+// (pre-region lines are Luzon's).
+async function readLocalAuditEvents(limit, region = DEFAULT_REGION) {
   try {
     const raw = await fs.readFile(LOCAL_AUDIT_PATH, "utf8");
     return raw
       .split(/\r?\n/)
       .filter(Boolean)
       .map((line) => JSON.parse(line))
+      .filter(
+        (event) => region === "all" || (event.region || DEFAULT_REGION) === region,
+      )
       .reverse()
       .slice(0, limit);
   } catch (error) {
@@ -544,7 +724,7 @@ async function writeAuditEvent(supabase, event) {
     await writeLocalAuditEvent(event);
     return;
   }
-  const { error } = await supabase.from("parameter_audit_events").insert({
+  const row = {
     id: event.id,
     actor_user_id: event.actorUserId,
     actor_email: event.actorEmail,
@@ -561,16 +741,32 @@ async function writeAuditEvent(supabase, event) {
     inventory_applied: event.inventoryApplied,
     request_id: event.requestId,
     metadata: event.metadata,
-  });
+  };
+  let { error } = await supabase
+    .from("parameter_audit_events")
+    .insert({ ...row, region: event.region });
+  // Backend deployed before migration 20261028 added the column (PGRST204
+  // "Could not find the 'region' column"): a Luzon event is still recorded —
+  // the column's default is 'luzon' once it exists.
+  if (
+    error &&
+    event.region === DEFAULT_REGION &&
+    /region/i.test(String(error.message)) &&
+    /column|schema cache|PGRST204/i.test(`${error.code || ""} ${error.message}`)
+  ) {
+    ({ error } = await supabase.from("parameter_audit_events").insert(row));
+  }
   if (error) {
     throw new Error(`Audit event insert failed: ${error.message}`);
   }
 }
 
+// `region` is a region id or "all" (every region, each row carrying its own).
 export async function getAuditEvents(
   accessToken,
   claimedRole,
   requestedLimit = 100,
+  region = DEFAULT_REGION,
 ) {
   const limit = Math.min(Math.max(Number(requestedLimit) || 100, 1), 200);
   assertLocalJsonStorage();
@@ -581,7 +777,7 @@ export async function getAuditEvents(
         payload: { error: "Audit history is restricted to administrators." },
       };
     }
-    return { status: 200, payload: await readLocalAuditEvents(limit) };
+    return { status: 200, payload: await readLocalAuditEvents(limit, region) };
   }
 
   const supabase = getSupabaseClient();
@@ -595,13 +791,20 @@ export async function getAuditEvents(
       payload: { error: "Audit history is restricted to administrators." },
     };
   }
-  const { data, error } = await supabase
+  if (region !== "all") {
+    const denied = assertRegionAccess(auth, region);
+    if (denied) return denied;
+  }
+  let query = supabase
     .from("parameter_audit_events")
     .select(
-      "id, actor_user_id, actor_email, actor_role, area, source, occurred_at, timezone, changes, applied_admin_keys, ignored_admin_keys, inventory_applied, request_id, metadata",
+      "id, region, actor_user_id, actor_email, actor_role, area, source, occurred_at, timezone, changes, applied_admin_keys, ignored_admin_keys, inventory_applied, request_id, metadata",
     )
     .order("occurred_at", { ascending: false })
     .limit(limit);
+  if (region !== "all") query = query.eq("region", region);
+  else query = query.in("region", auth.regions || [DEFAULT_REGION]);
+  const { data, error } = await query;
   if (error) {
     throw new Error(`Audit history query failed: ${error.message}`);
   }
@@ -628,34 +831,53 @@ export async function verifySession(accessToken) {
   if (error || !data?.user) {
     return { status: 401, error: "Invalid or expired session token" };
   }
-  // email (lower-cased) is what the Odoo services match a salesperson on.
-  return { userId: data.user.id, email: (data.user.email || "").trim().toLowerCase() };
+  // email (lower-cased) is what the Odoo services match a salesperson on;
+  // regions (v3-231) is what the parameters read is confined to.
+  return {
+    userId: data.user.id,
+    email: (data.user.email || "").trim().toLowerCase(),
+    regions: regionsFromAppMetadata(data.user.app_metadata),
+  };
 }
 
-// Any signed-in user may read the row (2026-09-27; it was public before).
-// Returns { status, payload } like putParameters so server.js treats the two
-// alike. Local JSON mode skips the check: the frontend's local fallback
-// session cannot mint a Supabase JWT, and that mode is already refused
-// outside NODE_ENV=development.
-export async function getParameters(accessToken) {
+// Any signed-in user may read the row (2026-09-27; it was public before) —
+// for a region on their account (v3-231). The body is the stored payload plus
+// a top-level `region` echo, so a frontend can tell it was served the region
+// it asked for (buildRuntime ignores the extra key). Returns { status, payload }
+// like putParameters so server.js treats the two alike. Local JSON mode skips
+// the check: the frontend's local fallback session cannot mint a Supabase
+// JWT, and that mode is already refused outside NODE_ENV=development.
+export async function getParameters(accessToken, region = DEFAULT_REGION) {
   assertLocalJsonStorage();
   if (isLocalJsonStorage()) {
-    return { status: 200, payload: await readLocalJsonPayload() };
+    return { status: 200, payload: { ...(await readLocalJsonPayload(region)), region } };
   }
   const session = await verifySession(accessToken);
   if (session.error) {
     return { status: session.status, payload: { error: session.error } };
   }
+  const denied = assertRegionAccess(session, region);
+  if (denied) return denied;
   const supabase = getSupabaseClient();
-  return { status: 200, payload: await readCurrentPayload(supabase) };
+  try {
+    const { payload } = await readRegionRow(supabase, region);
+    return { status: 200, payload: { ...payload, region } };
+  } catch (error) {
+    const result = asStorageResult(error);
+    if (result) return result;
+    throw error;
+  }
 }
 
 // The row for server-side callers that decide access themselves (the estimate
-// endpoint checks its shared key). Service-role read, no session.
-export async function readParametersPayload() {
+// endpoint checks its shared key; the Odoo services read one integration
+// setting). Service-role read, no session. Throws for an unprovisioned or
+// unseeded region.
+export async function readParametersPayload(region = DEFAULT_REGION) {
   assertLocalJsonStorage();
-  if (isLocalJsonStorage()) return await readLocalJsonPayload();
-  return await readCurrentPayload(getSupabaseClient());
+  if (isLocalJsonStorage()) return await readLocalJsonPayload(region);
+  const { payload } = await readRegionRow(getSupabaseClient(), region);
+  return payload;
 }
 
 export async function putParameters(
@@ -663,6 +885,7 @@ export async function putParameters(
   accessToken,
   claimedRole,
   requestId = randomUUID(),
+  region = DEFAULT_REGION,
 ) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { status: 400, payload: { error: "Body must be a JSON object" } };
@@ -680,6 +903,7 @@ export async function putParameters(
         role: claimedRole || "edit",
         userId: "local-user",
         email: "local-dev",
+        regions: [...REGIONS],
         local: true,
       }
     : await resolveEditRole(supabase, accessToken);
@@ -692,10 +916,22 @@ export async function putParameters(
   if (!EDIT_ROLES.has(role)) {
     return { status: 403, payload: { error: "Role has no edit access" } };
   }
+  const denied = assertRegionAccess(auth, region);
+  if (denied) return denied;
 
-  const current = localJsonStorage
-    ? await readLocalJsonPayload()
-    : await readCurrentPayload(supabase);
+  let current;
+  let legacy = false;
+  if (localJsonStorage) {
+    current = await readLocalJsonPayload(region);
+  } else {
+    try {
+      ({ payload: current, legacy } = await readRegionRow(supabase, region));
+    } catch (error) {
+      const result = asStorageResult(error);
+      if (result) return result;
+      throw error;
+    }
+  }
 
   const merged = {
     adminParams: { ...(current.adminParams || {}) },
@@ -949,6 +1185,55 @@ export async function putParameters(
       };
     }
   }
+  // v3-231 — region-aware delivery (engine 1.3.0) and the Odoo company hook.
+  {
+    const mp = merged.adminParams || {};
+    if ("deliveryRegionLabel" in mp) {
+      const v = mp.deliveryRegionLabel;
+      if (typeof v !== "string" || !v.trim() || v.trim().length > 40) {
+        return {
+          status: 400,
+          payload: {
+            error:
+              "Refusing to save: deliveryRegionLabel must be 1 to 40 characters (it names the region on the delivery line and the proposal).",
+          },
+        };
+      }
+    }
+    if ("deliveryHubEnabled" in mp && typeof mp.deliveryHubEnabled !== "boolean") {
+      return {
+        status: 400,
+        payload: { error: "Refusing to save: deliveryHubEnabled must be true or false." },
+      };
+    }
+    if ("deliveryHubLabel" in mp) {
+      const v = mp.deliveryHubLabel;
+      if (typeof v !== "string" || v.length > 60) {
+        return {
+          status: 400,
+          payload: { error: "Refusing to save: deliveryHubLabel must be a string of at most 60 characters." },
+        };
+      }
+      if (mp.deliveryHubEnabled !== false && !v.trim()) {
+        return {
+          status: 400,
+          payload: {
+            error:
+              "Refusing to save: deliveryHubLabel is required while the delivery hub is enabled (it is printed on the delivery line and in the Logistics clause).",
+          },
+        };
+      }
+    }
+    if ("odooCompanyId" in mp) {
+      const v = mp.odooCompanyId;
+      if (v !== null && (!Number.isInteger(v) || v < 1)) {
+        return {
+          status: 400,
+          payload: { error: "Refusing to save: odooCompanyId must be null or a positive integer (the Odoo company/branch id)." },
+        };
+      }
+    }
+  }
 
   const ap = merged.adminParams || {};
 
@@ -1104,10 +1389,14 @@ export async function putParameters(
     }
   }
 
+  let mirroredRegions = [];
   if (localJsonStorage) {
-    await writeLocalJsonPayload(merged);
+    await writeLocalJsonPayload(merged, region);
   } else {
-    await writePayload(supabase, merged);
+    await writePayload(supabase, region, merged, { legacy });
+    if (!legacy) {
+      mirroredRegions = await mirrorGlobalKeys(supabase, region, current, merged);
+    }
   }
   // Derived COGS→price ripples are filtered out of the audit trail (see
   // isDerivedAuditPath): only authored input changes are recorded, so a save
@@ -1121,6 +1410,7 @@ export async function putParameters(
     const occurredAt = new Date().toISOString();
     const auditEvent = {
       id: randomUUID(),
+      region,
       actorUserId: auth.userId || null,
       actorEmail: auth.email || null,
       actorRole: role,
@@ -1136,7 +1426,7 @@ export async function putParameters(
       ignoredAdminKeys,
       inventoryApplied,
       requestId,
-      metadata: {},
+      metadata: mirroredRegions.length ? { mirroredRegions } : {},
     };
     await writeAuditEvent(supabase, auditEvent);
   }
@@ -1145,10 +1435,12 @@ export async function putParameters(
     payload: {
       ok: true,
       savedAt: new Date().toISOString(),
+      region,
       role: role,
       appliedAdminKeys,
       ignoredAdminKeys,
       inventoryApplied,
+      mirroredRegions,
     },
   };
 }

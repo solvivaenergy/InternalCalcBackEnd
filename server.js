@@ -18,6 +18,7 @@ import {
   setUserArchived,
 } from "./src/usersService.js";
 import { rateLimit } from "./src/rateLimit.js";
+import { parseRegion } from "./src/regions.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -145,14 +146,32 @@ const bearerToken = (req) => {
     : "";
 };
 
+// v3-231 — `?region=luzon|cebu` on the parameter, audit and CRM routes picks
+// which region's payload a call is about; absent means Luzon, exactly the
+// pre-region behaviour, so a frontend that does not send it keeps working. A
+// query parameter rather than a header: it works on GET, needs no CORS
+// change, and shows up in Render's logs. Answers 400 itself on a bad value
+// and returns null so the handler can stop.
+const regionFromQuery = (req, res, options) => {
+  const parsed = parseRegion(req.query.region, options);
+  if (parsed.error) {
+    res.status(400).json({ error: parsed.error });
+    return null;
+  }
+  return parsed.region;
+};
+
 // The full parameters row — COGS, margin curves and promo codes included,
 // because the calculator derives its selling prices from them in the browser.
 // Public until 2026-09-27; now needs a signed-in Supabase user, the same rule
 // as the direct PostgREST read the frontend falls back to (migration
-// 20260922_app_parameters_authenticated_read.sql).
+// 20260922_app_parameters_authenticated_read.sql), and the region must be one
+// on the user's account (403 region_forbidden otherwise).
 app.get("/api/parameters", async (req, res) => {
   try {
-    const result = await getParameters(bearerToken(req));
+    const region = regionFromQuery(req, res);
+    if (!region) return;
+    const result = await getParameters(bearerToken(req), region);
     return res.status(result.status).json(result.payload);
   } catch (error) {
     console.error("[parameters] load failed", error);
@@ -160,13 +179,18 @@ app.get("/api/parameters", async (req, res) => {
   }
 });
 
+// ?region= may also be "all" here: every region the caller holds, each row
+// carrying its own `region`.
 app.get("/api/parameter-audit", async (req, res) => {
   try {
+    const region = regionFromQuery(req, res, { allowAll: true });
+    if (!region) return;
     const claimedRole = req.headers["x-solviva-role"] || "";
     const result = await getAuditEvents(
       bearerToken(req),
       claimedRole,
       req.query.limit,
+      region,
     );
     return res.status(result.status).json(result.payload);
   } catch (error) {
@@ -177,6 +201,8 @@ app.get("/api/parameter-audit", async (req, res) => {
 
 app.put("/api/parameters", async (req, res) => {
   try {
+    const region = regionFromQuery(req, res);
+    if (!region) return;
     const claimedRole = req.headers["x-solviva-role"] || "";
     const requestId = randomUUID();
     const result = await putParameters(
@@ -184,6 +210,7 @@ app.put("/api/parameters", async (req, res) => {
       bearerToken(req),
       claimedRole,
       requestId,
+      region,
     );
     return res.status(result.status).json(result.payload);
   } catch (error) {
@@ -199,10 +226,13 @@ app.put("/api/parameters", async (req, res) => {
 //
 // Deliberately does NOT read x-solviva-role. That header is client-supplied;
 // this endpoint returns contact PII, so it trusts only the server-verified
-// Supabase JWT.
+// Supabase JWT. ?region= (v3-231) is the region the rep is quoting in, so the
+// lookup can warn when the lead's address belongs to the other one.
 app.get("/api/crm-contact", async (req, res) => {
   try {
-    const result = await getCrmContact(req.query.projectNumber, bearerToken(req));
+    const region = regionFromQuery(req, res);
+    if (!region) return;
+    const result = await getCrmContact(req.query.projectNumber, bearerToken(req), region);
     return res.status(result.status).json(result.payload);
   } catch (error) {
     // No `detail` here: an Odoo fault message carries a traceback plus the
@@ -239,7 +269,8 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
-// Edit role / display name / mobile. Body: { role?, displayName?, mobile? }.
+// Edit role / regions / display name / mobile.
+// Body: { role?, regions?, displayName?, mobile? }.
 app.patch("/api/users/:id", async (req, res) => {
   try {
     const requestId = randomUUID();

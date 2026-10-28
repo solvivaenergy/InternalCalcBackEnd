@@ -1850,7 +1850,17 @@ export function buildPackageLineItems(state, adminParams, schedule) {
   // a partial ap in harnesses; a real blob without the key merges the
   // bundled default).
   const luzonFreeKm = ap.luzonFreeTravelKm ?? 30;
-  let locationLabel = `Location / Delivery — Luzon (within ${luzonFreeKm}km)`;
+  // v3-231 / engine 1.3.0 — region-aware labels and the no-hub rule. The
+  // 'luzon' location id is the region's home mainland whichever payload is
+  // live; the label names the region and its hub from the payload (Luzon's
+  // omits the keys → the historical text). hubEnabled false = the region has
+  // no dispatch hub yet: no radius, no surcharge, ₱0 and ₱0 COGS at any km.
+  const regionLabel = ap.deliveryRegionLabel ?? "Luzon";
+  const hubLabel = ap.deliveryHubLabel ?? "Parañaque hub";
+  const hubEnabled = ap.deliveryHubEnabled !== false;
+  let locationLabel = hubEnabled
+    ? `Location / Delivery — ${regionLabel} (within ${luzonFreeKm}km)`
+    : `Location / Delivery — ${regionLabel}`;
   if (panelsTotal > 0) {
     // v3-116 — dynamic delivery locations. Any non-luzon/non-other location
     // id resolves against ap.deliveryLocations (derived per-row at quote
@@ -1864,7 +1874,11 @@ export function buildPackageLineItems(state, adminParams, schedule) {
     if (dynamicLoc) {
       locationDirect = dynamicLoc.fixedFee + panelCount * dynamicLoc.perPanel;
       locationLabel = `Location / Delivery — ${dynamicLoc.label}`;
-    } else if (location === "luzon" && (locationKm || 0) > luzonFreeKm) {
+    } else if (
+      location === "luzon" &&
+      hubEnabled &&
+      (locationKm || 0) > luzonFreeKm
+    ) {
       // v3-115 PARITY FIX — workbook AA38 is MAX(0, Y39-30) × D41 + D40: the
       // per-km rate applies ONLY to the EXCESS beyond the free zone. The app
       // had charged the FULL distance since Luzon location pricing was
@@ -1877,7 +1891,7 @@ export function buildPackageLineItems(state, adminParams, schedule) {
       locationDirect =
         ap.luzonOver30FixedFee +
         Math.max(0, (locationKm || 0) - luzonFreeKm) * ap.luzonOver30PerKm;
-      locationLabel = `Location / Delivery — Luzon (${locationKm} km from Parañaque hub)`; // v3-114 origin rebase
+      locationLabel = `Location / Delivery — ${regionLabel} (${locationKm} km from ${hubLabel})`; // v3-114 origin rebase; v3-231 region-aware
     }
   }
   // v3-134 — location COGS mirror: dynamic row → fixedFeeCogs + panels ×
@@ -1892,7 +1906,11 @@ export function buildPackageLineItems(state, adminParams, schedule) {
     if (dynRow) {
       locationCogs =
         (dynRow.fixedFeeCogs || 0) + panelCount * (dynRow.perPanelCogs || 0);
-    } else if (location === "luzon" && (locationKm || 0) > luzonFreeKm) {
+    } else if (
+      location === "luzon" &&
+      hubEnabled &&
+      (locationKm || 0) > luzonFreeKm
+    ) {
       locationCogs =
         ap.luzonOver30FixedFeeCogs +
         Math.max(0, (locationKm || 0) - luzonFreeKm) * ap.luzonOver30PerKmCogs;

@@ -49,6 +49,8 @@
 // =============================================================================
 
 import { verifySession } from "./parametersService.js";
+import { parseRegion, regionLabel } from "./regions.js";
+import { LEAD_REGION_FIELDS, leadRegionWarning, odooCompanyIdFor } from "./leadRegionGuard.js";
 import {
   odooConfig,
   missingOdooEnv,
@@ -145,6 +147,10 @@ function validateBody(body) {
   if (!LEAD_ID_RE.test(rawLead)) {
     return { error: "leadId must be a positive integer (the Odoo Project Number)." };
   }
+  // v3-231 — the region whose parameters priced the proposal. Optional, so a
+  // frontend that predates regions keeps working (Luzon).
+  const parsedRegion = parseRegion(body.region);
+  if (parsedRegion.error) return { error: parsedRegion.error };
   const p = body.proposal;
   if (!p || typeof p !== "object") return { error: "proposal is required." };
   if (!str(p.quoteRef, 64)) return { error: "proposal.quoteRef is required." };
@@ -199,6 +205,7 @@ function validateBody(body) {
 
   return {
     leadId: Number(rawLead),
+    region: parsedRegion.region,
     proposal: { ...p, quote, system, agent, customer },
     boq,
     orderLines,
@@ -445,7 +452,7 @@ export function resetOdooQuotationCaches() {
 export async function createQuotationFromProposal(body, accessToken, requestId = "") {
   const parsed = validateBody(body);
   if (parsed.error) return { status: 400, payload: { error: parsed.error } };
-  const { leadId, proposal, boq, orderLines } = parsed;
+  const { leadId, region, proposal, boq, orderLines } = parsed;
 
   const caller = await verifySession(accessToken);
   if (caller.error) return { status: caller.status, payload: { error: caller.error } };
@@ -478,6 +485,9 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
 
   const signal = AbortSignal.timeout(odooTimeoutMs() * 2);
   const warnings = [];
+  // v3-231 — machine-readable companions to `warnings` (the frontend keys its
+  // banner wording on these); only the region guard emits one so far.
+  const warningCodes = [];
 
   try {
     // 1. The lead — its partner is the quotation's customer.
@@ -485,7 +495,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
       cfg,
       "crm.lead",
       [["id", "=", leadId], ["active", "in", [true, false]]],
-      ["id", "name", "partner_id", "user_id", "team_id", "company_id"],
+      ["id", "name", "partner_id", "user_id", "team_id", ...LEAD_REGION_FIELDS],
       signal,
       { limit: 1 },
     );
@@ -504,6 +514,22 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
           code: "lead_has_no_partner",
         },
       };
+    }
+
+    // 1b. v3-231 — does the lead belong to the region that priced this
+    //     proposal? Warning only; the quotation is still created.
+    const regionGuard = leadRegionWarning({
+      lead,
+      region,
+      odooCompanyId: await odooCompanyIdFor(region),
+    });
+    if (regionGuard) {
+      warningCodes.push(regionGuard.code);
+      warnings.push(
+        regionGuard.code === "lead_region_unknown"
+          ? `This proposal was priced with the ${regionLabel(region)} parameters, but ${regionGuard.detail}, so the region could not be checked.`
+          : `This proposal was priced with the ${regionLabel(region)} parameters, but ${regionGuard.detail}. Check the lead before sending the quotation.`,
+      );
     }
 
     // 2. Salesperson: the lead's assigned rep, else the signed-in calculator
@@ -646,6 +672,7 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
         `Net price ₱${num(q.netPrice).toLocaleString("en-PH")}, down payment ₱${num(q.downPaymentAmount).toLocaleString("en-PH")}` +
           (isDirect ? "" : `, monthly ₱${num(q.monthlyPayment).toLocaleString("en-PH")}, total due ₱${num(q.totalAmountDueInclDst).toLocaleString("en-PH")}`) + ".",
         `Order lines: ${orderLineCount}. Bill of Quantities rows: ${boq.length}.`,
+        `Priced with the ${escapeHtml(regionLabel(region))} region parameters.`,
       ];
       // Odoo 18 escapes `body` unless body_is_html is set (a plain string is
       // never trusted as markup over RPC). Without it the note shows literal
@@ -664,11 +691,11 @@ export async function createQuotationFromProposal(body, accessToken, requestId =
     }
 
     console.log("[odoo-quotation] created", {
-      requestId, leadId, orderId, orderName, salespersonSource, orderLines: orderLineCount, boqRows: boq.length, skipped,
+      requestId, leadId, region, orderId, orderName, salespersonSource, orderLines: orderLineCount, boqRows: boq.length, skipped, warningCodes,
     });
     return {
       status: 201,
-      payload: { orderId, orderName, leadId, salespersonSource, warnings },
+      payload: { orderId, orderName, leadId, region, salespersonSource, warnings, warningCodes },
     };
   } catch (err) {
     // Log the shape, never the customer data.

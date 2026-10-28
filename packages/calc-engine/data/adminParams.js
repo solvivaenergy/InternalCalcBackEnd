@@ -680,6 +680,25 @@ export const ADMIN_PARAMS = {
   luzonOver30PerKmCogs: 132, // D61 — per-km charge on the excess beyond the free radius
   luzonOver30PerKm: 0, // DERIVED from luzonOver30PerKmCogs — see deriveDirectPrices()
 
+  // v3-231 / engine 1.3.0 — REGION-AWARE DELIVERY. One calculator now serves
+  // more than one office (Manila/Luzon today, Cebu next), each with its own
+  // parameter payload. The structural location id 'luzon' keeps meaning "the
+  // region's home mainland" for every region (no state migration), and these
+  // three keys make the delivery line, the picker option and the T&C read
+  // correctly for whichever payload is live. Luzon's payload omits them and
+  // gets these defaults, so every Luzon label and price is byte-identical.
+  //   deliveryRegionLabel  "Location / Delivery — <label> …" and the picker
+  //   deliveryHubLabel     "<km> km from <hub>" and the T&C {{DELIVERY_HUB}}
+  //   deliveryHubEnabled   false = the region has NO dispatch hub yet: every
+  //                        serviceable city prices ₱0 delivery (no km, no
+  //                        surcharge) and the Logistics T&C clause is dropped.
+  //                        Flipping it on later is data, not a release.
+  // A boolean flag (not a null label) because a stored null overwrites the
+  // default in buildRuntime and `??` would then fall back to Parañaque.
+  deliveryRegionLabel: "Luzon",
+  deliveryHubLabel: "Parañaque hub",
+  deliveryHubEnabled: true,
+
   // ─── RSD pricing (Admin D62:D65) ───────────────────────────────────────────
   // Direct prices from v3.2 D-column.
   // v3-106 — rsdAvailable: stock flag for the RSD hardware itself. When false,
@@ -1459,16 +1478,24 @@ export const PROPOSAL_CONTENT = {
         "Current (DC) cable and the initial 10 meters (m) of Alternating " +
         "Current (AC) cable will be charged per meter at a specified rate.",
     },
-    { kind: "heading", text: "Logistics Add-On Cost" },
+    // v3-231 / engine 1.3.0 — requiresHub: the PDF generator (and the MCP
+    // proposal) DROP these two blocks when adminParams.deliveryHubEnabled is
+    // false — a per-km clause is wrong legal copy for a region that has no
+    // dispatch hub and prices every delivery at ₱0. The origin is the
+    // {{DELIVERY_HUB}} token (deliveryHubLabel; Luzon: "Parañaque hub" — the
+    // v3-114 measuring origin, which the old literal "Parañaque city" no
+    // longer matched), so the clause can never name a hub the engine does
+    // not price from.
+    { kind: "heading", text: "Logistics Add-On Cost", requiresHub: true },
     {
       kind: "paragraph",
+      requiresHub: true,
       text:
         "Any excess distance beyond the first {{LUZON_FREE_KM}} kilometers (km) from " +
-        "Parañaque city will be charged per kilometer " +
-        "at a specified rate.", // v3-114 origin rebase; v3-199 — the radius is
-      // the luzonFreeTravelKm param via the v3-104
-      // token mechanism, so the legal copy can never
-      // contradict the engine's charge
+        "the {{DELIVERY_HUB}} will be charged per kilometer " +
+        "at a specified rate.", // v3-199 — the radius is the luzonFreeTravelKm
+      // param via the v3-104 token mechanism, so the
+      // legal copy can never contradict the engine's charge
     },
     { kind: "heading", text: "Price Validity" },
     {
