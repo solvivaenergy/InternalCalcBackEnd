@@ -409,21 +409,23 @@ async function readLegacyPayload(supabase) {
   return asPayload(data?.payload);
 }
 
-// → { payload, legacy }. `legacy: true` means the region table is not there
-// yet and Luzon was served from app_parameters; a write must then go back to
-// app_parameters too. Any other region without a table/row is an operator
-// problem (run the migration / the seed script), reported as 503 / 404 and
-// NEVER merged onto {} — a PUT on an empty payload would persist a half row.
+// → { payload, legacy, updatedAt }. `legacy: true` means the region table is
+// not there yet and Luzon was served from app_parameters; a write must then go
+// back to app_parameters too. Any other region without a table/row is an
+// operator problem (run the migration / the seed script), reported as 503 /
+// 404 and NEVER merged onto {} — a PUT on an empty payload would persist a
+// half row. `updatedAt` is the row's last save (ISO string, null when served
+// from the legacy row): the calculator shows it as "price list updated …".
 async function readRegionRow(supabase, region) {
   const { data, error } = await supabase
     .from(REGION_TABLE)
-    .select("payload")
+    .select("payload, updated_at")
     .eq("region", region)
     .maybeSingle();
   if (error) {
     if (isMissingTableError(error)) {
       if (region === DEFAULT_REGION) {
-        return { payload: await readLegacyPayload(supabase), legacy: true };
+        return { payload: await readLegacyPayload(supabase), legacy: true, updatedAt: null };
       }
       throw new RegionStorageError(503, {
         error: `${regionLabel(region)} parameters are not provisioned on this server yet (apply supabase/migrations/20261028_region_parameters.sql).`,
@@ -434,14 +436,14 @@ async function readRegionRow(supabase, region) {
   }
   if (!data) {
     if (region === DEFAULT_REGION) {
-      return { payload: await readLegacyPayload(supabase), legacy: true };
+      return { payload: await readLegacyPayload(supabase), legacy: true, updatedAt: null };
     }
     throw new RegionStorageError(404, {
       error: `${regionLabel(region)} parameters have not been seeded on this server yet (scripts/seed-region-parameters.mjs).`,
       code: "region_not_seeded",
     });
   }
-  return { payload: asPayload(data.payload), legacy: false };
+  return { payload: asPayload(data.payload), legacy: false, updatedAt: data.updated_at || null };
 }
 
 async function readLocalJsonPayload(region = DEFAULT_REGION) {
@@ -860,8 +862,10 @@ export async function getParameters(accessToken, region = DEFAULT_REGION) {
   if (denied) return denied;
   const supabase = getSupabaseClient();
   try {
-    const { payload } = await readRegionRow(supabase, region);
-    return { status: 200, payload: { ...payload, region } };
+    // Top-level `region` and `updatedAt` ride beside the payload keys; the
+    // calculator strips both before applying the payload (paramsService.js).
+    const { payload, updatedAt } = await readRegionRow(supabase, region);
+    return { status: 200, payload: { ...payload, region, updatedAt } };
   } catch (error) {
     const result = asStorageResult(error);
     if (result) return result;
