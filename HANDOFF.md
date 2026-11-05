@@ -1,5 +1,142 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-10-28 — Regions: one parameter payload per office (Manila / Cebu), engine 1.3.0
+
+Source baseline: `staging` at `0bc49b9` (frontend `staging` at `167df2b`,
+v3-230). Target: staging only; production is promoted later with the same
+migration file.
+
+### Scope
+
+- Solviva opens a Cebu office. Cebu's costs, margins, COGS and logistics all
+  differ, so each region gets its OWN complete parameter payload and each
+  account holds region access (Manila only / Cebu only / both). One
+  calculator, not a second instance. Region ids are `luzon` (Manila, today's
+  behaviour — byte-identical) and `cebu`; `src/regions.js` is the allowlist.
+- `?region=luzon|cebu` on `GET/PUT /api/parameters`, `GET /api/parameter-audit`
+  (`all` allowed) and `GET /api/crm-contact`; `region` in the
+  `POST /api/odoo/quotation` body. Absent = `luzon`, so the pre-region
+  frontend keeps working unchanged against this backend.
+- Access is enforced server-side from `app_metadata.regions` for EVERY role
+  (Super Admin included): `403 region_forbidden`. Missing ⇒ `['luzon']`
+  everywhere (backend, RLS, frontend); no backfill of existing accounts.
+- Maintenance mode stays GLOBAL: a save that changes `gateAuthEnabled` in one
+  region copies it into every other seeded region row (`mirroredRegions` in
+  the response and in the audit event's `metadata`).
+- Lead↔region guard, WARNING ONLY: Odoo has no Cebu company/branch/team yet,
+  so `src/leadRegionGuard.js` reads the lead's `state_id` / `x_studio_province`
+  (city only when both are empty, against unambiguous Cebu LGU names) and
+  emits `lead_region_mismatch` / `lead_region_unknown`; once a region's
+  `adminParams.odooCompanyId` is set it compares `lead.company_id` instead
+  (`lead_company_mismatch`). The quotation is still created; the chatter note
+  names the region.
+- Engine 1.3.0 (`packages/calc-engine`): three optional parameters read only
+  in the delivery block — `deliveryRegionLabel` ("Luzon"), `deliveryHubLabel`
+  ("Parañaque hub"), `deliveryHubEnabled` (true). `false` = the region has no
+  dispatch hub: ₱0 delivery and ₱0 COGS at any km, label "Location / Delivery
+  — Cebu". The Logistics T&C heading + paragraph carry `requiresHub: true`
+  (renderers drop them when the hub is off) and the clause's origin is the
+  `{{DELIVERY_HUB}}` token — Luzon's printed clause now reads "from the
+  Parañaque hub" (was "from Parañaque city"; the hub has been the measuring
+  origin since v3-114). Parity: 46/46 scenarios identical on the staging AND
+  production payloads; the only runtime diff is the three new default keys.
+- Backward compatibility: the backend tolerates `region_parameters` not
+  existing yet (Luzon falls back to `app_parameters`; Cebu answers
+  `503 region_not_provisioned`), a Cebu row not seeded (`404 region_not_seeded`,
+  never merged onto `{}`), and the audit `region` column missing (Luzon event
+  inserted without it). Every Luzon save is MIRRORED into `app_parameters` so
+  the frontend fallback, `mcp/db.js` and the parity harness stay current.
+
+### Files touched
+
+- `server.js` — `regionFromQuery`, region threaded into the four routes.
+- `src/regions.js` (new), `src/leadRegionGuard.js` (new).
+- `src/parametersService.js` — `region_parameters` read/write, legacy
+  fallback + mirror, `assertRegionAccess`, `mirrorGlobalKeys`, audit
+  `region`, per-region local JSON, four new `PARAM_KEY_TO_SECTION` keys under
+  `location` with validation.
+- `src/usersService.js` — `regions` on create/update/list.
+- `src/crmContactService.js`, `src/odooQuotationService.js` — region + guard.
+- `src/estimateService.js` — explicit Luzon. `mcp/proposal.js` —
+  `{{DELIVERY_HUB}}` token, `requiresHub` filter, `region` in the Odoo body.
+- `packages/calc-engine/{package.json,calculations.js,data/adminParams.js}`.
+- `supabase/migrations/20261028_region_parameters.sql` (new).
+- `scripts/seed-region-parameters.mjs` (new), `data/parameters.cebu.local.json`
+  (new, tracked, `{}`), `README.md`.
+
+### Contract changes (the frontend's list — v3-231)
+
+- Send `?region=` on parameters/audit/crm-contact and `region` in the
+  quotation body. New statuses: `403 region_forbidden`,
+  `404 region_not_seeded`, `503 region_not_provisioned`; `400` for an unknown
+  region. `GET /api/parameters` body gains a top-level `region` echo (strip
+  before `applyOverrides`; use it to refuse a payload served for the wrong
+  region). PUT response gains `region`, `mirroredRegions`.
+- `/api/users`: `regions[]` + `regionsExplicit` on every user; `regions?` on
+  POST (default `["luzon"]`) and PATCH (non-empty, replaces whole).
+- `/api/crm-contact` response gains `region`; `warnings[]` may contain
+  `lead_region_mismatch`, `lead_region_unknown`, `lead_company_mismatch`.
+  `/api/odoo/quotation` 201 gains `region`, `warningCodes[]`.
+- Engine tarball `calc-engine-v1.3.0`. Register `deliveryRegionLabel`,
+  `deliveryHubLabel`, `deliveryHubEnabled`, `odooCompanyId` under `location`
+  in `permissions.js` (+ the netlify mirror) or saves drop them. Substitute
+  `{{DELIVERY_HUB}}`; drop `requiresHub` blocks when
+  `deliveryHubEnabled === false`. Direct-read fallback should read
+  `region_parameters?region=eq.<r>` (RLS already scopes it).
+
+### Data changes
+
+- New `public.region_parameters(region text pk, payload jsonb, updated_at)`;
+  seeded `luzon` (exact copy of `app_parameters`) and `cebu` (copy +
+  `deliveryRegionLabel 'Cebu'`, `deliveryHubLabel ''`,
+  `deliveryHubEnabled false`, `deliveryLocations []`, `odooCompanyId null`,
+  `duInflationSourceName/Url` → Visayan Electric; the inflation FIGURES stay
+  Meralco's until FinCo supplies VECO's).
+- `parameter_audit_events.region text not null default 'luzon'` + index
+  `(region, occurred_at desc)`.
+- RLS on `region_parameters`: select for `authenticated` scoped to the JWT's
+  `app_metadata.regions` (missing ⇒ `luzon`); no anon; `db_mcp_ro` granted
+  select. `app_parameters` untouched. Rollback statements at the bottom of the
+  migration file; the migration is additive so the previous backend keeps
+  working without it being rolled back.
+
+### Validation
+
+- `node --check` on every changed file; `src/regions.js` and
+  `src/leadRegionGuard.js` exercised with 22 assertions (parse/validate,
+  canonical order, address heuristic, company path).
+- Engine parity (`packages/calc-engine/parity`, v1.2.0 vs 1.3.0): staging and
+  production payloads — `46 identical, 1 different` where the one is
+  `runtime.adminParams.delivery*` defaults; with those three keys removed
+  `47 identical, 0 different`. A Cebu-shaped payload prices
+  `Location / Delivery — Cebu` at ₱0 / ₱0 COGS at 0 km and 80 km; Luzon at
+  80 km stays `8946 / 6350` with the Parañaque hub label.
+- Local (`PARAMETERS_STORAGE=local-json`): `GET /api/parameters?region=cebu`
+  → `{..., region: "cebu"}` from `data/parameters.cebu.local.json`;
+  `?region=bohol` → 400; PUT with `?region=cebu` writes that file only and the
+  audit line carries `region: "cebu"`.
+- Staging after deploy: see the checklist in the frontend handoff
+  (`HANDOFF-2026-10-regions.md`) — GET/PUT per region, 403 for a Luzon-only
+  user, SQL equality of `region_parameters.luzon` and `app_parameters` after a
+  Luzon save, audit filter, `lead_region_mismatch` on lead 52210 with
+  `region=cebu`.
+
+### Deployment notes
+
+- No new environment variables.
+- Order: apply the migration to staging (Management API, as `postgres`) →
+  push `staging` (Render auto-deploys `InternalCalcBackEnd-Staging` AND
+  `internalcalc-mcp`, both from this branch) → tag `calc-engine-v1.3.0`
+  (release workflow publishes `solviva-calc-engine-1.3.0.tgz`) → frontend.
+- Grant Cebu to the first users with `PATCH /api/users/:id {"regions":
+  ["luzon","cebu"]}` as a Super Admin (or the Users tab once v3-231 is up).
+- Follow-ups: `mcp/` `region` argument + read `region_parameters`; frontend
+  direct-read fallback → `region_parameters`; then drop the Luzon mirror.
+  VECO inflation figures from FinCo. Cebu `odooCompanyId` once Finance has the
+  Odoo branch. The real Cebu delivery charge and hub are DATA (Engineering
+  tab): set `deliveryHubLabel`, flip `deliveryHubEnabled`, enter the radius
+  and the two `luzonOver30*Cogs` values.
+
 ## 2026-10-15 — `mcp/`: the "Internal Calculator Engine" MCP server for Claude Teams
 
 ### Scope

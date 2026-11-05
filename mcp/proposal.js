@@ -61,6 +61,9 @@ export function buildOdooPayload({ state, model, contact, agent, issuedAt, valid
   const orderLines = buildOrderLines({ model, state });
   return {
     leadId: leadId ?? null,
+    // v3-231 — the region whose parameters priced the proposal. The connector
+    // reads the legacy (Luzon) row, so this is always Luzon here for now.
+    region: "luzon",
     proposal: {
       quoteRef,
       generatedAt: issuedAt.toISOString(),
@@ -132,6 +135,8 @@ export function buildProposal({ internal, model, state, customer = {}, agent = {
     QUOTE_VALIDITY_DAYS: internal.validityDays,
     VALID_UNTIL: fmtDate.format(validUntil),
     LUZON_FREE_KM: ap.luzonFreeTravelKm || 30,
+    // engine 1.3.0 — the dispatch hub named in the Logistics clause.
+    DELIVERY_HUB: ap.deliveryHubLabel || "Parañaque hub",
   };
 
   const packageDetail = ["A", "B", "C"]
@@ -192,7 +197,12 @@ export function buildProposal({ internal, model, state, customer = {}, agent = {
     scheduleOfPayments: { installDate: internal.schedule.installDate, rows: internal.schedule.rows || internal.schedule.preview },
     savingsAndReturns: internal.savings,
     warranties: PROPOSAL_CONTENT.warranties,
-    termsAndConditions: substituteTokens(PROPOSAL_CONTENT.termsAndConditions, tokens),
+    // engine 1.3.0 — blocks flagged requiresHub (the Logistics clause) are
+    // dropped for a region with no dispatch hub, as pdfGenerator.js does.
+    termsAndConditions: substituteTokens(
+      PROPOSAL_CONTENT.termsAndConditions.filter((b) => !(b.requiresHub && ap.deliveryHubEnabled === false)),
+      tokens,
+    ),
     disclaimers: {
       irr: `${DISCLAIMERS.irrDisclaimerBefore}${DISCLAIMERS.irrDisclaimerHighlight}${DISCLAIMERS.irrDisclaimerAfter}`,
       irrHighlight: DISCLAIMERS.irrDisclaimerHighlight,

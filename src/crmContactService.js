@@ -15,6 +15,8 @@
 // =============================================================================
 
 import { verifySession } from "./parametersService.js";
+import { DEFAULT_REGION } from "./regions.js";
+import { LEAD_REGION_FIELDS, leadRegionWarning, odooCompanyIdFor } from "./leadRegionGuard.js";
 import {
   odooConfig,
   missingOdooEnv,
@@ -110,11 +112,17 @@ const LEAD_FIELDS = [
   "mobile",
   // The assigned salesperson — the Solviva Agent on the proposal (2026-10-05).
   "user_id",
+  // v3-231 — address + company, for the lead↔region warning only; none of
+  // these reach the response.
+  ...LEAD_REGION_FIELDS,
 ];
 
 // ─── Public entry point ──────────────────────────────────────────────────────
 
-export async function getCrmContact(projectNumber, accessToken) {
+// `region` (v3-231) is the calculator the rep is quoting in; a lead whose
+// address belongs to the other region adds `lead_region_mismatch` (or
+// `lead_region_unknown` when the lead has no address) to `warnings`.
+export async function getCrmContact(projectNumber, accessToken, region = DEFAULT_REGION) {
   const raw = String(projectNumber ?? "").trim();
   if (!PROJECT_NUMBER_RE.test(raw)) {
     return {
@@ -216,6 +224,14 @@ export async function getCrmContact(projectNumber, accessToken) {
     .find((v) => v && v.toLowerCase() !== squash(name).toLowerCase());
   if (alternate) warnings.push("contact_name_differs");
 
+  // v3-231 — does this lead belong to the region being quoted? Warning only.
+  const regionGuard = leadRegionWarning({
+    lead,
+    region,
+    odooCompanyId: await odooCompanyIdFor(region),
+  });
+  if (regionGuard) warnings.push(regionGuard.code);
+
   // Who presents the proposal: the lead's assigned salesperson (else the
   // caller's own Odoo user), with the same rule the quotation push applies to
   // sale.order.user_id, so the agent on the PDF and the salesperson on the
@@ -243,6 +259,7 @@ export async function getCrmContact(projectNumber, accessToken) {
     status: 200,
     payload: {
       projectNumber: id,
+      region,
       name: name || null,
       email: email || null,
       mobile: mobile || null,

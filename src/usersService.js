@@ -58,6 +58,11 @@
 
 import { randomBytes } from "node:crypto";
 import { getSupabaseClient, resolveEditRole } from "./parametersService.js";
+import {
+  DEFAULT_REGION,
+  regionsFromAppMetadata,
+  validateRegions,
+} from "./regions.js";
 
 // Everything an admin may assign. Deliberately excludes 'customer': nobody is
 // provisioned as a customer — that is fetchUserRole's default for an account
@@ -151,6 +156,11 @@ function toPublicUser(user, tableRole) {
     mobile: user.user_metadata?.mobile || null,
     role: effectiveRole(user, tableRole),
     tableRole: tableRole || null,
+    // v3-231 — the regions (calculators) this account may use. Missing on
+    // every pre-region account ⇒ ['luzon']; `regionsExplicit` tells the Users
+    // tab whether that is a stored value or the default.
+    regions: regionsFromAppMetadata(user.app_metadata),
+    regionsExplicit: Array.isArray(user.app_metadata?.regions),
     providers: Array.isArray(user.app_metadata?.providers)
       ? user.app_metadata.providers
       : user.app_metadata?.provider
@@ -240,6 +250,15 @@ export function validateCreateUserInput(body) {
     return { error: `Role must be one of: ${ASSIGNABLE_ROLES.join(", ")}.` };
   }
 
+  // v3-231 — regions. Absent ⇒ Manila only, written explicitly so every
+  // account made here carries the key.
+  let regions = [DEFAULT_REGION];
+  if (body.regions !== undefined && body.regions !== null) {
+    const parsedRegions = validateRegions(body.regions);
+    if (parsedRegions.error) return { error: parsedRegions.error };
+    regions = parsedRegions.value;
+  }
+
   const displayNameRaw = body.displayName == null ? "" : String(body.displayName);
   const displayName = displayNameRaw.trim().replace(/\s+/g, " ");
   if (displayName.length > MAX_NAME_LENGTH) {
@@ -277,7 +296,7 @@ export function validateCreateUserInput(body) {
   }
 
   return {
-    value: { email, role, displayName: displayName || null, mobile, ssoOnly, password },
+    value: { email, role, regions, displayName: displayName || null, mobile, ssoOnly, password },
   };
 }
 
@@ -302,16 +321,18 @@ export async function createUser(body, accessToken, requestId) {
 
   const parsed = validateCreateUserInput(body);
   if (parsed.error) return { status: 400, payload: { error: parsed.error } };
-  const { email, role, displayName, mobile, ssoOnly, password } = parsed.value;
+  const { email, role, regions, displayName, mobile, ssoOnly, password } = parsed.value;
 
   // 1 + 2. auth.users row with the role in BOTH metadata blocks (see header).
+  // regions lives in app_metadata ONLY: it gates which parameter payload the
+  // account may read and write, so it must stay service-role-only.
   const userMetadata = { role };
   if (displayName) userMetadata.display_name = displayName;
   if (mobile) userMetadata.mobile = mobile;
   const createAttrs = {
     email,
     email_confirm: true,
-    app_metadata: { role },
+    app_metadata: { role, regions },
     user_metadata: userMetadata,
   };
   if (!ssoOnly) createAttrs.password = password;
@@ -370,6 +391,7 @@ export async function createUser(body, accessToken, requestId) {
     userId: user.id,
     email,
     role,
+    regions,
     tableRole: TABLE_ROLE(role),
     signIn: ssoOnly ? "google-only" : "password",
   });
@@ -399,6 +421,13 @@ export function validateUpdateUserInput(body) {
     value.role = role;
   }
 
+  // v3-231 — regions replace the stored list whole (never merged).
+  if ("regions" in body) {
+    const parsedRegions = validateRegions(body.regions);
+    if (parsedRegions.error) return { error: parsedRegions.error };
+    value.regions = parsedRegions.value;
+  }
+
   if ("displayName" in body) {
     const raw = body.displayName == null ? "" : String(body.displayName);
     const displayName = raw.trim().replace(/\s+/g, " ");
@@ -422,7 +451,7 @@ export function validateUpdateUserInput(body) {
   }
 
   if (Object.keys(value).length === 0) {
-    return { error: "Nothing to update — send a role, displayName or mobile." };
+    return { error: "Nothing to update — send a role, regions, displayName or mobile." };
   }
   return { value };
 }
@@ -502,6 +531,10 @@ export async function updateUser(userId, body, accessToken, requestId) {
     appMeta.role = patch.role;
     userMeta.role = patch.role;
   }
+  // An admin may edit their OWN regions (unlike their role): that is how the
+  // first Super Admin grants themself the new region, and validateRegions
+  // already refuses an empty list, so nobody ends up region-less.
+  if (patch.regions !== undefined) appMeta.regions = patch.regions;
   if (patch.displayName !== undefined) userMeta.display_name = patch.displayName;
   if (patch.mobile !== undefined) userMeta.mobile = patch.mobile;
 
@@ -559,6 +592,7 @@ export async function updateUser(userId, body, accessToken, requestId) {
     email: user.email || null,
     changed: Object.keys(patch),
     role: roleChanged ? patch.role : undefined,
+    regions: patch.regions,
   });
 
   return {
