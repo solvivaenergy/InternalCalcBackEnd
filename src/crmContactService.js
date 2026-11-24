@@ -266,7 +266,7 @@ export async function getCrmContact(projectNumber, accessToken, region = DEFAULT
       alternateName: alternate || null,
       warnings,
       // { source: "lead" | "calculator-user" | "none", name, email, mobile,
-      //   warnings[] } or null when Odoo could not answer.
+      //   phoneRaw, warnings[] } or null when Odoo could not answer.
       salesperson,
     },
   };

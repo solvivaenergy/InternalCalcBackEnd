@@ -48,13 +48,32 @@ export function pickUserMobile(user) {
   return null;
 }
 
-// Pure. { id, name, email, mobile } with nulls for what Odoo does not have.
+// Pure. The first non-empty phone field EXACTLY as Odoo stores it (trimmed
+// only), or null. v3-233: the proposal prints the salesperson's number as it
+// is in Odoo (user decision 2026-11-12), so a value the PH-mobile normaliser
+// rejects is still shown rather than dropped.
+export function pickUserPhoneRaw(user) {
+  for (const f of PHONE_FIELD_ORDER) {
+    const v = clean(user?.[f]);
+    if (v) return v;
+  }
+  return null;
+}
+
+// Pure. { id, name, email, mobile, phoneRaw } with nulls for what Odoo does
+// not have.
 // login is the email address on this instance, so it stands in when the
 // partner has no email; a login that is not an address is not reported as one.
 export function userProfile(user) {
   if (!user) return null;
   const email = [user.email, user.login].map(clean).find((v) => v && EMAIL_RE.test(v)) || null;
-  return { id: user.id, name: clean(user.name), email, mobile: pickUserMobile(user) };
+  return {
+    id: user.id,
+    name: clean(user.name),
+    email,
+    mobile: pickUserMobile(user),
+    phoneRaw: pickUserPhoneRaw(user),
+  };
 }
 
 async function readUsers(cfg, domain, signal) {
@@ -117,6 +136,9 @@ export function salespersonPayload({ source, profile }) {
     name: profile?.name || null,
     email: profile?.email || null,
     mobile: profile?.mobile || null,
+    // v3-233 — the number as stored in Odoo, un-normalised (see
+    // pickUserPhoneRaw); `mobile` stays the validated 09XXXXXXXXX form.
+    phoneRaw: profile?.phoneRaw || null,
     warnings,
   };
 }
