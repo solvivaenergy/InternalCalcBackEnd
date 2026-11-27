@@ -3,7 +3,7 @@
 import "./src/loadEnv.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import express from "express";
-import { buildEstimate } from "./src/estimateService.js";
+import { buildEstimate, buildEstimateBatch } from "./src/estimateService.js";
 import {
   getParameters,
   putParameters,
@@ -99,8 +99,10 @@ const estimateKeyOk = (req) => {
   if (!expected || given.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(given), Buffer.from(expected));
 };
+// /batch answers several estimates for one visitor in one request (the
+// website's packages), behind the same key and the same two limits.
 app.post(
-  "/api/public/estimate",
+  ["/api/public/estimate", "/api/public/estimate/batch"],
   rateLimit({ max: Number(process.env.ESTIMATE_RATE_LIMIT_PER_ADDRESS) || 600, windowMs: 60_000 }),
   (req, res, next) => {
     if (!process.env.PUBLIC_ESTIMATE_KEY) {
@@ -112,13 +114,14 @@ app.post(
     next();
   },
   rateLimit({
-    max: Number(process.env.ESTIMATE_RATE_LIMIT_PER_VISITOR) || 30,
+    // one page action is at most two requests (sizing, then the packages)
+    max: Number(process.env.ESTIMATE_RATE_LIMIT_PER_VISITOR) || 60,
     windowMs: 60_000,
     key: (req) => req.get("x-estimate-client-ip") || req.ip,
   }),
   async (req, res) => {
     try {
-      const result = await buildEstimate(req.body);
+      const result = await (req.path.endsWith("/batch") ? buildEstimateBatch : buildEstimate)(req.body);
       return res.status(result.status).json(result.payload);
     } catch (error) {
       console.error("[estimate] failed", error);
