@@ -1,5 +1,56 @@
 # InternalCalcBackEnd — Handoff
 
+## 2026-11-27 — `POST /api/public/estimate/batch`: the website calculator runs on this engine
+
+### Scope
+
+- The External Calculator (solvivaenergy.com/calculator) no longer carries
+  price tables. Its Cloudflare Worker forwards `/calculator/api/estimate` to
+  the new batch route, so every figure the page shows (sizing per savings
+  target, the three packages, cash and rent-to-own prices, savings, payback,
+  IRR, LCOE, 25-year savings) is `computeProposal()` on the live parameter
+  row. A margin, COGS, promo, battery-package or device change saved in the
+  Internal Calculator reaches the website within the 30 s parameter cache.
+- `src/estimateService.js`: `buildEstimateBatch()` (1–16 scenarios over
+  shared inputs, one failing scenario does not fail the rest, same
+  no-COGS/no-margin scan); new optional inputs on both routes: `panelCount`,
+  `batteryKwh`, `batteryPackageId`, `promoCode` (allowlist
+  `PUBLIC_ESTIMATE_PROMO_CODES`, default `CASH,RTO`; a listed code the admin
+  has removed gives no discount); the projection gains
+  `consumption.inconsistent`, `pricing.promoCode`, `savings.coverage`; the
+  batch answer carries a `catalog` (device names, in-stock battery packages).
+- `server.js`: the batch path shares the single route's key check and both
+  limits; per-visitor default raised from 30 to 60 a minute (one page action
+  is at most two requests).
+
+### Contract changes
+
+- Additive only. `POST /api/public/estimate` answers the same fields as
+  before plus the three new ones.
+
+### Validation
+
+- Local server on the production parameter row (read only): ₱15,000 bill,
+  8 panels + 5 kWh, `CASH` → net 381,384.53, savings 8,100, payback 43 mo,
+  IRR 0.3559, LCOE 3.46; `RTO`, 60 mo, 0% down → 11,874.72 a month. The same
+  inputs through the MCP's `calc_quote` give the same figures. An unlisted
+  promo code → that scenario answers `{ error }`, the others still compute.
+- The website page driven end to end through a stand-in Worker: first
+  estimate is two requests (10 sizings, then 6 package runs); a slider step,
+  a package adjustment or a term change is one.
+
+### Deployment notes
+
+- Set `PUBLIC_ESTIMATE_KEY` on the Render service the website should use,
+  then the same value plus `ESTIMATE_API_URL` (this service's base URL) as
+  secrets on the External Calculator Worker, and deploy the Worker. Until the
+  key is set the routes answer 503 and the website shows "We couldn't work
+  out your estimate just now".
+- The website prices with the promo codes `CASH` (pay in full) and `RTO`
+  (rent-to-own). Removing or renaming either in the admin removes that
+  discount from the website; keep them, or change
+  `PUBLIC_ESTIMATE_PROMO_CODES` and the page together.
+
 ## 2026-10-28 — Regions: one parameter payload per office (Manila / Cebu), engine 1.3.0
 
 Source baseline: `staging` at `0bc49b9` (frontend `staging` at `167df2b`,

@@ -27,7 +27,7 @@ import {
   ADMIN_PARAMS,
   DEVICES,
 } from "@solviva/calc-engine";
-import { availableDeliveryLocations } from "@solviva/calc-engine/data/adminParams.js";
+import { availableDeliveryLocations, availableBatteryPackages } from "@solviva/calc-engine/data/adminParams.js";
 import { readParametersPayload } from "./parametersService.js";
 import { DEFAULT_REGION } from "./regions.js";
 
@@ -109,6 +109,43 @@ function normalize(body) {
   if (!(downPaymentPct >= 0 && downPaymentPct <= 1)) {
     return { error: "downPaymentPct must be between 0 and 1." };
   }
+  // A system the visitor picked instead of the recommendation (the website's
+  // packages and its panel / battery steppers). Absent = the engine's sizing.
+  let panelCount = null;
+  if (body.panelCount != null) {
+    panelCount = num(body.panelCount);
+    if (!(Number.isInteger(panelCount) && panelCount >= 0 && panelCount <= 2000)) {
+      return { error: "panelCount must be a whole number from 0 to 2000." };
+    }
+  }
+  let batteryKwh = null;
+  if (body.batteryKwh != null) {
+    batteryKwh = num(body.batteryKwh);
+    if (!(batteryKwh >= 0 && batteryKwh <= 1000)) {
+      return { error: "batteryKwh must be between 0 and 1000 (0 = no battery)." };
+    }
+  }
+  let batteryPackageId = null;
+  if (body.batteryPackageId != null && body.batteryPackageId !== "") {
+    const pkg = availableBatteryPackages(ADMIN_PARAMS).find((p) => p.id === body.batteryPackageId);
+    if (!pkg) {
+      return {
+        error: `batteryPackageId must be one of: ${availableBatteryPackages(ADMIN_PARAMS).map((p) => p.id).join(", ")}.`,
+      };
+    }
+    batteryPackageId = pkg.id;
+  }
+  // Promo codes the website may quote with (its cash price and its
+  // rent-to-own price). Anything else is refused, so the public route cannot
+  // be used to try codes; a listed code the admin has since removed simply
+  // gives no discount (pricing.promoCode comes back null).
+  let promoCode = null;
+  if (body.promoCode != null && body.promoCode !== "") {
+    promoCode = String(body.promoCode).trim().toUpperCase();
+    if (!websitePromoCodes().includes(promoCode)) {
+      return { error: `promoCode must be one of: ${websitePromoCodes().join(", ")}.` };
+    }
+  }
   const appliances = body.appliances == null ? [] : body.appliances;
   if (!Array.isArray(appliances) || appliances.length > MAX_APPLIANCES) {
     return { error: `appliances must be an array of at most ${MAX_APPLIANCES} rows.` };
@@ -139,10 +176,17 @@ function normalize(body) {
     inputs: {
       monthlyBill, utilityRate, phase: phase === 3 ? "three" : "single",
       desiredSavingsPct, roofMaterial, location, locationKm, tenor, downPaymentPct,
+      panelCount, batteryKwh, batteryPackageId, promoCode,
       appliances: rows,
     },
   };
 }
+
+const websitePromoCodes = () =>
+  (process.env.PUBLIC_ESTIMATE_PROMO_CODES ?? "CASH,RTO")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
 
 function stateFor(inputs) {
   const state = defaultState(ADMIN_PARAMS);
@@ -155,6 +199,13 @@ function stateFor(inputs) {
   state.locationKm = inputs.locationKm;
   state.tenor = inputs.tenor;
   state.downPaymentPct = inputs.downPaymentPct;
+  // The same overrides a rep sets in Step 2 (and the MCP's calc_quote sets).
+  if (inputs.panelCount != null) state.panelCount = inputs.panelCount;
+  if (inputs.batteryKwh != null) state.batteryKwh = inputs.batteryKwh;
+  if (inputs.batteryPackageId) state.batteryPackageId = inputs.batteryPackageId;
+  if (inputs.promoCode && (ADMIN_PARAMS.promoCodes || []).some((p) => p.code === inputs.promoCode)) {
+    state.promoCode = inputs.promoCode;
+  }
   if (inputs.appliances.length) {
     // The engine's rows carry times as fractions of a day (Excel time values).
     state.deviceRows = inputs.appliances.map((a) => ({
@@ -188,6 +239,8 @@ function project(model, state, inputs, now) {
       nightTimeKwh: round2(r.nightTimeKwh),
       appliancesKwh: round2(r.deviceTotalKwh),
       baseloadKwh: round2(r.baseloadKwh),
+      // true = the appliances alone use more than the bill implies
+      inconsistent: !!r.inconsistent,
     },
     system: {
       panelCount: model.panelCount,
@@ -209,6 +262,7 @@ function project(model, state, inputs, now) {
     pricing: {
       currency: "PHP",
       netPrice: round2(t.netDirectPrice),
+      promoCode: state.promoCode || null,
       promoDiscount: round2(t.promoDiscount),
       directPurchase: {
         total: round2(dp.total),
@@ -254,8 +308,81 @@ function project(model, state, inputs, now) {
       horizonYears: state.irrYears,
       totalSavingsOverHorizon: round2(cf.totalDuSavings),
       duRateInflation: cf.duRateInflation ?? null,
+      // Share of the home's use met by the panels directly, by the battery,
+      // and still bought from the grid (the proposal's "Solar w/ Batteries" bar).
+      coverage: coverageOf(sch),
     },
   };
+}
+
+function coverageOf(sch) {
+  const bar = (sch.coverageBars || []).find((b) => b.name === "Solar w/ Batteries");
+  if (!bar) return null;
+  return { solarPctOfUse: round4(bar.solar), batteryPctOfUse: round4(bar.battery), gridPctOfUse: round4(bar.grid) };
+}
+
+// What the website needs to build its choices from the live catalog: the
+// appliance names it may send and the battery sizes it may offer. Names and
+// sizes only.
+function catalog() {
+  return {
+    devices: DEVICES.map((d) => ({ name: d.name })),
+    batteryPackages: availableBatteryPackages(ADMIN_PARAMS).map((p) => ({
+      id: p.id,
+      label: p.label,
+      unitKwh: p.batteryUnitKwh,
+    })),
+    promoCodes: websitePromoCodes().filter((c) => (ADMIN_PARAMS.promoCodes || []).some((p) => p.code === c)),
+  };
+}
+
+const leaks = (payload) => /cogs|margin/i.test(JSON.stringify(payload));
+
+const MAX_SCENARIOS = 16;
+
+// POST /api/public/estimate/batch — several estimates for one visitor in one
+// request: { common?: {…estimate inputs}, scenarios: [{ id, …inputs that
+// differ }] } (≤16). The website asks for the engine's sizing at each savings
+// target, then for its packages (each priced for cash and for rent-to-own),
+// so one page action is one request and one tick of the visitor's rate limit.
+// A scenario that fails validation answers { id, error } without failing the
+// rest. Returns { engineVersion, generatedAt, catalog, results }.
+export async function buildEstimateBatch(body, now = new Date()) {
+  const payload = await liveParamsPayload();
+  applyRuntime(buildRuntime(DEFAULTS, payload));
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { status: 400, payload: { error: "Request body must be a JSON object." } };
+  }
+  const common = body.common == null ? {} : body.common;
+  if (typeof common !== "object" || Array.isArray(common)) {
+    return { status: 400, payload: { error: "common must be an object of estimate inputs." } };
+  }
+  const scenarios = body.scenarios;
+  if (!Array.isArray(scenarios) || scenarios.length < 1 || scenarios.length > MAX_SCENARIOS) {
+    return { status: 400, payload: { error: `scenarios must be an array of 1 to ${MAX_SCENARIOS} objects.` } };
+  }
+  const results = [];
+  for (const [i, s] of scenarios.entries()) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) {
+      return { status: 400, payload: { error: `scenarios[${i}] must be an object.` } };
+    }
+    const id = typeof s.id === "string" && s.id.length <= 64 ? s.id : String(i);
+    const { id: _id, ...own } = s;
+    const normalized = normalize({ ...common, ...own });
+    if (normalized.error) {
+      results.push({ id, error: normalized.error });
+      continue;
+    }
+    const state = stateFor(normalized.inputs);
+    results.push({ id, estimate: project(computeProposal(state, now), state, normalized.inputs, now) });
+  }
+  const result = { engineVersion: ENGINE_VERSION, generatedAt: now.toISOString(), catalog: catalog(), results };
+  if (leaks(result)) {
+    console.error("[estimate] batch projection contains a cost/margin field; refusing to answer");
+    return { status: 500, payload: { error: "Failed to compute the estimate." } };
+  }
+  return { status: 200, payload: result };
 }
 
 // Returns { status, payload } like the other services.
